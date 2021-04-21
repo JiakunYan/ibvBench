@@ -3,10 +3,10 @@
 # exit when any command fails
 set -e
 # import the the script containing common functions
-source ../include/scripts.sh
+source ../../include/scripts.sh
 
 # get the ibvBench source path via environment variable or default value
-IBVB_SOURCE_PATH=$(realpath "${IBVB_SOURCE_PATH:-../../}")
+IBVB_SOURCE_PATH=$(realpath "${IBVB_SOURCE_PATH:-../../../}")
 
 if [[ -f "${IBVB_SOURCE_PATH}/rdma-core/rc_pingpong.c" ]]; then
   echo "Found ibvBench at ${IBVB_SOURCE_PATH}"
@@ -37,7 +37,7 @@ cd build
 echo "Running cmake..."
 IBVB_INSTALL_PATH=$(realpath "../install")
 cmake -DCMAKE_INSTALL_PREFIX=${IBVB_INSTALL_PATH} \
-      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_BUILD_TYPE=Debug \
       -L \
       ${IBVB_SOURCE_PATH} | tee init-cmake.log 2>&1 || { echo "cmake error!"; exit 1; }
 cmake -LAH . >> init-cmake.log

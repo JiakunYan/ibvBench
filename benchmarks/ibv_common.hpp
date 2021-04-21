@@ -154,8 +154,8 @@ void init(char *devname, Device *device) {
     }
 
     // Create completion queues.
-    device->send_cq = ibv_create_cq(device->dev_ctx, MAX_CQE_NUM, NULL, NULL, NULL);
-    device->recv_cq = ibv_create_cq(device->dev_ctx, MAX_CQE_NUM, NULL, NULL, NULL);
+    device->send_cq = ibv_create_cq(device->dev_ctx, MAX_CQE_NUM, NULL, NULL, 0);
+    device->recv_cq = ibv_create_cq(device->dev_ctx, MAX_CQE_NUM, NULL, NULL, 0);
     if (!device->send_cq || !device->recv_cq) {
         fprintf(stderr, "Unable to create cq\n");
         exit(EXIT_FAILURE);
@@ -391,6 +391,57 @@ int postSend(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey, 
             .num_sge    = 1,
             .opcode     = IBV_WR_SEND,
             .send_flags = IBV_SEND_SIGNALED,
+    };
+    struct ibv_send_wr *bad_wr;
+
+    return ibv_post_send(device->qps[rank], &wr, &bad_wr);
+}
+
+int postWrite(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
+              uintptr_t remote_addr, uint32_t rkey, void *user_context)
+{
+    struct ibv_sge list = {
+            .addr	= (uint64_t) buf,
+            .length = size,
+            .lkey	= lkey
+    };
+    struct ibv_send_wr wr = {
+            .wr_id	    = (uint64_t) user_context,
+            .next       = NULL,
+            .sg_list    = &list,
+            .num_sge    = 1,
+            .opcode     = IBV_WR_RDMA_WRITE,
+            .send_flags = IBV_SEND_SIGNALED,
+    };
+    wr.wr.rdma = {
+            .remote_addr = remote_addr,
+            .rkey = rkey,
+    };
+    struct ibv_send_wr *bad_wr;
+
+    return ibv_post_send(device->qps[rank], &wr, &bad_wr);
+}
+
+int postWriteImm(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
+                 uintptr_t remote_addr, uint32_t rkey, uint32_t data, void *user_context)
+{
+    struct ibv_sge list = {
+            .addr	= (uint64_t) buf,
+            .length = size,
+            .lkey	= lkey
+    };
+    struct ibv_send_wr wr = {
+            .wr_id	    = (uint64_t) user_context,
+            .next       = NULL,
+            .sg_list    = &list,
+            .num_sge    = 1,
+            .opcode     = IBV_WR_RDMA_WRITE_WITH_IMM,
+            .send_flags = IBV_SEND_SIGNALED,
+            .imm_data   = data,
+    };
+    wr.wr.rdma = {
+            .remote_addr = remote_addr,
+            .rkey = rkey,
     };
     struct ibv_send_wr *bad_wr;
 

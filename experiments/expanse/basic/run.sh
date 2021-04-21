@@ -3,7 +3,7 @@
 # exit when any command fails
 set -e
 # import the the script containing common functions
-source ../include/scripts.sh
+source ../../include/scripts.sh
 
 task="basic.slurm"
 sbatch_path=$(realpath "${sbatch_path:-.}")

@@ -99,5 +99,10 @@ inline int comm_set_me_to(int core_id) {
     pthread_t current_thread = pthread_self();
     return pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 }
+
+inline void MEM_FENCE()
+{
+    asm volatile("mfence" ::: "memory");
+}
 } // namespace fb
 #endif//FABRICBENCH_COMM_EXP_HPP

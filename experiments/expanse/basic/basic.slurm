@@ -11,3 +11,7 @@
 path_to_exe=${1:-./init/build/benchmarks}
 echo "srun -n 2 ibv_pingpong_sendrecv"
 srun -n 2 --mpi=pmi2 ${path_to_exe}/ibv_pingpong_sendrecv
+echo "srun -n 2 ibv_pingpong_write"
+srun -n 2 --mpi=pmi2 ${path_to_exe}/ibv_pingpong_write
+echo "srun -n 2 ibv_pingpong_write_imm"
+srun -n 2 --mpi=pmi2 ${path_to_exe}/ibv_pingpong_write_imm

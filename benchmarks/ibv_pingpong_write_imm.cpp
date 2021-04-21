@@ -13,28 +13,32 @@ int main() {
     int rank = pmi_get_rank();
     int nranks = pmi_get_size();
     assert(nranks == 2);
+    memset(device.mr_addr, 0, ibv::MR_SIZE);
+    pmi_barrier();
 
     if (rank == 0) {
         RUN_VARY_MSG({min_msg_size, max_msg_size}, true, [&](int msg_size, int iter) {
-            // post one send
-            int ret = ibv::postSend(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->rkey, NULL);
-            MLOG_Assert(ret == 0, "Post Send failed!");
+            // post one write
+          memset(device.mr_addr, 'a', msg_size);
+            int ret = ibv::postWriteImm(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->rkey,
+                                     device.rmrs[1-rank].addr, device.rmrs[1-rank].rkey, 77 + rank, NULL);
+            MLOG_Assert(ret == 0, "Post Write failed!");
 
-            // wait for send to complete
+            // wait for write to complete
             int ne;
             struct ibv_wc wc;
             do {
                 ne = ibv_poll_cq(device.send_cq, 1, &wc);
                 MLOG_Assert(ne >= 0, "Poll Send CQ failed %d\n", ne);
             } while (ne == 0);
-            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND, "Send completion failed!");
+            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RDMA_WRITE, "Send completion failed!");
 
-            // wait for one recv to complete
+            // wait for remote write to complete
             do {
                 ne = ibv_poll_cq(device.recv_cq, 1, &wc);
                 MLOG_Assert(ne >= 0, "Poll Recv CQ failed %d\n", ne);
             } while (ne == 0);
-            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV, "Recv completion failed!");
+            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM, "Recv completion failed!");
             // optionally post recv buffers
             if (--device.posted_recv_num < ibv::MIN_RECV_NUM) {
                 for (int j = device.posted_recv_num; j < ibv::MAX_RECV_NUM; ++j) {
@@ -52,8 +56,8 @@ int main() {
                 ne = ibv_poll_cq(device.recv_cq, 1, &wc);
                 MLOG_Assert(ne >= 0, "Poll Recv CQ failed %d\n", ne);
             } while (ne == 0);
-            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV,
-                        "Recv completion failed!");
+            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM,
+                      "Recv completion failed!");
             // optionally post recv buffers
             if (--device.posted_recv_num < ibv::MIN_RECV_NUM) {
                 for (int j = device.posted_recv_num; j < ibv::MAX_RECV_NUM;
@@ -65,21 +69,22 @@ int main() {
                 }
             }
 
-            // post one send
-            int ret = ibv::postSend(&device, 1 - rank, device.mr_addr, msg_size,
-                          device.dev_mr->rkey, NULL);
-            MLOG_Assert(ret == 0, "Post Send failed!");
+            // post one write
+            memset(device.mr_addr, 'b', msg_size);
+            int ret = ibv::postWriteImm(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->rkey,
+                                   device.rmrs[1-rank].addr, device.rmrs[1-rank].rkey, 77 + rank, NULL);
+            MLOG_Assert(ret == 0, "Post Write failed!");
 
-            // wait for send to complete
+            // wait for write to complete
             do {
-                ne = ibv_poll_cq(device.send_cq, 1, &wc);
-                MLOG_Assert(ne >= 0, "Poll Send CQ failed %d\n", ne);
+              ne = ibv_poll_cq(device.send_cq, 1, &wc);
+              MLOG_Assert(ne >= 0, "Poll Send CQ failed %d\n", ne);
             } while (ne == 0);
-            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND,
-                        "Send completion failed!");
+            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RDMA_WRITE, "Send completion failed!");
         });
     }
 
+    pmi_barrier();
     ibv::finalize(&device);
     return 0;
 }

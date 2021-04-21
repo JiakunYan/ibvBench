@@ -11,7 +11,9 @@ Author: Jiakun Yan (jiakuny3@illinois.edu)
     - pmi: A pmi wrapper for PMI and PMI2. The user can choose which one to use by the
         cmake option `USE_PMI2`.
 - benchmarks: The actual benchmarks. Currently, they are:
-    - ibv_pingpong_sendrecv: pingpong benchmark for the IB channel semantic.
+    - ibv_pingpong_sendrecv: pingpong benchmark for IB channel semantic.
+    - ibv_pingpong_write: pingpong benchmark for IB RDMA write.
+    - ibv_pingpong_write: pingpong benchmark for IB RDMA write with immediate data.
 - rdma-core: benchmark examples, borrowed from the `rdma-core` project (https://github.com/linux-rdma/rdma-core).
 - experiments: contains some useful scripts to run benchmarks on various platform.
     Currently, we have set up the scripts for
@@ -21,7 +23,7 @@ Author: Jiakun Yan (jiakuny3@illinois.edu)
 This project uses the cmake build system. We have also set up the scripts to run benchmarks
 on various platform. Take SDSC Expanse for example:
 ```
-> cd /path/to/ibvBench/experiments/expanse
+> cd /path/to/ibvBench/experiments/expanse/basic
 > ./init.sh # build this project in `init` directory
 > ./run.sh  # submit some (by default, 7) sbatch scripts to slurm. Results will be in `run` directory.
 > ./draw.sh # draw some summary figures in `draw` directory
