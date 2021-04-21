@@ -1,0 +1,2 @@
+add_ibv_executable(ibv_pingpong_sendrecv ibv_pingpong_sendrecv.cpp)
+target_link_libraries(ibv_pingpong_sendrecv PRIVATE mlog-lib pmi-lib)
