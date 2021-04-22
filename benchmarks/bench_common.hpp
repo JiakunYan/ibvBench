@@ -6,12 +6,19 @@
 #define FABRICBENCH_COMM_EXP_HPP
 #include <iostream>
 #include <sys/time.h>
+#include <getopt.h>
 
 #define LARGE 8192
 #define TOTAL 40000
 #define SKIP 10000
 #define TOTAL_LARGE 10000
 #define SKIP_LARGE 1000
+
+/* Names for the values of the 'has_arg' field of 'struct option'.  */
+
+#define no_argument		0
+#define required_argument	1
+#define optional_argument	2
 
 namespace bench {
 static inline double wtime() {

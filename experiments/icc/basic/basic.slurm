@@ -1,6 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=compute
-#SBATCH --account=uic193
+#SBATCH --partition=cs
 #SBATCH --time=5:00
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1

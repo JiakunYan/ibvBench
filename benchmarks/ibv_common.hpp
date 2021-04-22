@@ -359,7 +359,17 @@ void finalize(Device *device) {
     pmi_finalize();
 }
 
-int postRecv(Device *device, void *buf, uint32_t size, uint32_t lkey, void *user_context)
+inline struct ibv_wc pollCQ(struct ibv_cq *cq) {
+    int ne;
+    struct ibv_wc wc;
+    do {
+        ne = ibv_poll_cq(cq, 1, &wc);
+        MLOG_Assert(ne >= 0, "Poll CQ failed %d\n", ne);
+    } while (ne == 0);
+    return wc;
+}
+
+inline int postRecv(Device *device, void *buf, uint32_t size, uint32_t lkey, void *user_context)
 {
     struct ibv_sge list = {
             .addr	= (uint64_t) buf,
@@ -377,7 +387,16 @@ int postRecv(Device *device, void *buf, uint32_t size, uint32_t lkey, void *user
     return ibv_post_srq_recv(device->dev_srq, &wr, &bad_wr);
 }
 
-int postSend(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey, void *user_context)
+inline void checkAndPostRecvs(Device *device) {
+    if (device->posted_recv_num < ibv::MIN_RECV_NUM) {
+        for (int j = device->posted_recv_num; j < ibv::MAX_RECV_NUM; ++j) {
+            int ret = ibv::postRecv(device, device->mr_addr, device->mr_size, device->dev_mr->rkey, NULL);
+            MLOG_Assert(ret == 0, "Post Recv %d failed!\n", j);
+        }
+    }
+}
+
+inline int postSend(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey, void *user_context)
 {
     struct ibv_sge list = {
             .addr	= (uint64_t) buf,
@@ -397,7 +416,7 @@ int postSend(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey, 
     return ibv_post_send(device->qps[rank], &wr, &bad_wr);
 }
 
-int postWrite(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
+inline int postWrite(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
               uintptr_t remote_addr, uint32_t rkey, void *user_context)
 {
     struct ibv_sge list = {
@@ -422,7 +441,7 @@ int postWrite(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
     return ibv_post_send(device->qps[rank], &wr, &bad_wr);
 }
 
-int postWriteImm(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
+inline int postWriteImm(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
                  uintptr_t remote_addr, uint32_t rkey, uint32_t data, void *user_context)
 {
     struct ibv_sge list = {

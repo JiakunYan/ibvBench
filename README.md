@@ -11,6 +11,7 @@ Author: Jiakun Yan (jiakuny3@illinois.edu)
     - pmi: A pmi wrapper for PMI and PMI2. The user can choose which one to use by the
         cmake option `USE_PMI2`.
 - benchmarks: The actual benchmarks. Currently, they are:
+    - mpi_pingpong: pingpong benchmark for MPI Send/Recv
     - ibv_pingpong_sendrecv: pingpong benchmark for IB channel semantic.
     - ibv_pingpong_write: pingpong benchmark for IB RDMA write.
     - ibv_pingpong_write: pingpong benchmark for IB RDMA write with immediate data.

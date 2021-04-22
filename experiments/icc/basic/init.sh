@@ -21,8 +21,7 @@ mkdir_s ./init
 cd init
 
 # setup module environment
-module purge
-module load DefaultModules
+#module purge # module purge is broken on campus cluster
 module load gcc
 module load openmpi
 module load cmake

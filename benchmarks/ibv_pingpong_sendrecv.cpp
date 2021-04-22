@@ -4,82 +4,99 @@
 using namespace std;
 using namespace bench;
 
-int min_msg_size = 8;
-int max_msg_size = 64 * 1024;
+struct Config {
+    bool touch_data = true;
+    int min_msg_size = 8;
+    int max_msg_size = 64 * 1024;
+};
 
-int main() {
+Config parseArgs(int argc, char **argv) {
+    Config config;
+    int opt;
+    opterr = 0;
+
+    struct option long_options[] = {
+            {"min-msg-size", required_argument, 0, 'a'},
+            {"max-msg-size", required_argument, 0, 'b'},
+            {"touch-data",   required_argument, 0, 't'},
+    };
+    while ((opt = getopt_long(argc, argv, "t:", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 'a':
+                config.min_msg_size = atoi(optarg);
+            case 'b':
+                config.max_msg_size = atoi(optarg);
+            case 't':
+                config.touch_data = atoi(optarg);
+                break;
+            default:
+                break;
+        }
+    }
+    return config;
+}
+
+int run(Config config) {
     ibv::Device device;
     ibv::init(NULL, &device);
     int rank = pmi_get_rank();
     int nranks = pmi_get_size();
-    assert(nranks == 2);
+    MLOG_Assert(nranks == 2, "This benchmark requires exactly two processes\n");
+    char value = 'a' + rank;
+    char peer_value = 'a' + 1 - rank;
 
     if (rank == 0) {
-        RUN_VARY_MSG({min_msg_size, max_msg_size}, true, [&](int msg_size, int iter) {
+        RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, true, [&](int msg_size, int iter) {
+            struct ibv_wc wc;
             // post one send
+            if (config.touch_data) write_buffer((char*) device.mr_addr, msg_size, value);
             int ret = ibv::postSend(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->rkey, NULL);
             MLOG_Assert(ret == 0, "Post Send failed!");
 
             // wait for send to complete
-            int ne;
-            struct ibv_wc wc;
-            do {
-                ne = ibv_poll_cq(device.send_cq, 1, &wc);
-                MLOG_Assert(ne >= 0, "Poll Send CQ failed %d\n", ne);
-            } while (ne == 0);
+            wc = ibv::pollCQ(device.send_cq);
             MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND, "Send completion failed!");
 
             // wait for one recv to complete
-            do {
-                ne = ibv_poll_cq(device.recv_cq, 1, &wc);
-                MLOG_Assert(ne >= 0, "Poll Recv CQ failed %d\n", ne);
-            } while (ne == 0);
+            wc = ibv::pollCQ(device.recv_cq);
             MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV, "Recv completion failed!");
             // optionally post recv buffers
-            if (--device.posted_recv_num < ibv::MIN_RECV_NUM) {
-                for (int j = device.posted_recv_num; j < ibv::MAX_RECV_NUM; ++j) {
-                    int ret = ibv::postRecv(&device, device.mr_addr, device.mr_size, device.dev_mr->rkey, NULL);
-                    MLOG_Assert(ret == 0, "Post Recv failed!");
-                }
-            }
+            --device.posted_recv_num;
+            ibv::checkAndPostRecvs(&device);
+            if (config.touch_data) check_buffer((char*) device.mr_addr, msg_size, peer_value);
         });
     } else {
-        RUN_VARY_MSG({min_msg_size, max_msg_size}, false, [&](int msg_size, int iter) {
+        RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, false, [&](int msg_size, int iter) {
             int ne;
             struct ibv_wc wc;
             // wait for one recv to complete
-            do {
-                ne = ibv_poll_cq(device.recv_cq, 1, &wc);
-                MLOG_Assert(ne >= 0, "Poll Recv CQ failed %d\n", ne);
-            } while (ne == 0);
+            wc = ibv::pollCQ(device.recv_cq);
             MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV,
                         "Recv completion failed!");
             // optionally post recv buffers
-            if (--device.posted_recv_num < ibv::MIN_RECV_NUM) {
-                for (int j = device.posted_recv_num; j < ibv::MAX_RECV_NUM;
-                     ++j) {
-                    int ret = ibv::postRecv(&device, device.mr_addr,
-                                            device.mr_size, device.dev_mr->rkey,
-                                            NULL);
-                    MLOG_Assert(ret == 0, "Post Recv failed!");
-                }
-            }
+            --device.posted_recv_num;
+            ibv::checkAndPostRecvs(&device);
+            if (config.touch_data) check_buffer((char*) device.mr_addr, msg_size, peer_value);
 
             // post one send
+            if (config.touch_data) write_buffer((char*) device.mr_addr, msg_size, value);
             int ret = ibv::postSend(&device, 1 - rank, device.mr_addr, msg_size,
                           device.dev_mr->rkey, NULL);
             MLOG_Assert(ret == 0, "Post Send failed!");
 
             // wait for send to complete
-            do {
-                ne = ibv_poll_cq(device.send_cq, 1, &wc);
-                MLOG_Assert(ne >= 0, "Poll Send CQ failed %d\n", ne);
-            } while (ne == 0);
+            wc = ibv::pollCQ(device.send_cq);
             MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND,
                         "Send completion failed!");
         });
     }
 
     ibv::finalize(&device);
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    Config config = parseArgs(argc, argv);
+    run(config);
     return 0;
 }
