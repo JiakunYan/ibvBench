@@ -150,6 +150,7 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
 
     // Create shared-receive queue, **number here affect performance**.
     struct ibv_srq_init_attr srq_attr;
+    memset(&srq_attr, 0, sizeof(srq_attr));
     srq_attr.srq_context = NULL;
     srq_attr.attr.max_wr = MAX_RECV_NUM;
     srq_attr.attr.max_sge = MAX_SGE_NUM;
@@ -192,6 +193,7 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
     for (int i = 0; i < nranks; i++) {
         {
             struct ibv_qp_init_attr init_attr;
+            memset(&init_attr, 0, sizeof(init_attr));
             init_attr.send_cq = device->send_cq;
             init_attr.recv_cq = device->recv_cq;
             init_attr.srq = device->dev_srq;
@@ -212,6 +214,7 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
             }
 
             struct ibv_qp_attr attr;
+            memset(&attr, 0, sizeof(attr));
             ibv_query_qp(device->qps[i], &attr, IBV_QP_CAP, &init_attr);
             MLOG_Assert(device->config.max_inline_data == -1 ||
                         device->config.max_inline_data == init_attr.cap.max_inline_data,
@@ -226,6 +229,7 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
             // state. The first state transition that needs to happen is to
             // bring the QP in the INIT state.
             struct ibv_qp_attr attr;
+            memset(&attr, 0, sizeof(attr));
             attr.qp_state        = IBV_QPS_INIT;
             attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE |
                                    IBV_ACCESS_REMOTE_READ |
@@ -273,6 +277,7 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
         // possible to transition the QP into the ready to receive (RTR) state.
         {
             struct ibv_qp_attr attr;
+            memset(&attr, 0, sizeof(attr));
             attr.qp_state		= IBV_QPS_RTR;
             attr.path_mtu		= device->port_attr.active_mtu;
             // starting receive packet sequence number
@@ -285,6 +290,7 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
             attr.ah_attr.sl		= 0;
             attr.ah_attr.src_path_bits	= 0;
             attr.ah_attr.is_global	= 0;
+            attr.ah_attr.static_rate = 0;
             attr.ah_attr.port_num	= device->dev_port;
             // maximum number of resources for incoming RDMA requests
             // don't know what this is
@@ -292,8 +298,7 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
             // minimum RNR NAK timer (recommended value: 12)
             attr.min_rnr_timer		= 12;
             // should not be necessary to set these, given is_global = 0
-//            memset(&attr.ah_attr.grh.dgid, 0, sizeof attr.ah_attr.grh.dgid);
-//            attr.ah_attr.grh.sgid_index = -1;  // gid
+            memset(&attr.ah_attr.grh, 0, sizeof attr.ah_attr.grh);
 
             int flags = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN |
                         IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
@@ -308,6 +313,7 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
         // it may then be transitioned to the ready to send (RTS) state.
         {
             struct ibv_qp_attr attr;
+            memset(&attr, 0, sizeof(attr));
             attr.qp_state = IBV_QPS_RTS;
             attr.sq_psn = 0;
             // number of outstanding RDMA reads and atomic operations allowed

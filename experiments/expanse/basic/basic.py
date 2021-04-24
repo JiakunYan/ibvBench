@@ -67,20 +67,30 @@ if __name__ == "__main__":
 
     draw_cofig = {
         "name": "latency",
-        "input": "draw/basic.csv",
         "x_key": "Size(B)",
         "y_key": "latency(us)",
         "tag_key": "task",
         "output": "draw/"
     }
-    draw_tag(draw_cofig)
+    draw_tag(draw_cofig, df)
 
+    df_touch_data = df[df.apply(lambda row: "-t 1" in row["task"], axis=1)]
     draw_cofig = {
-        "name": "bandwidth",
-        "input": "draw/basic.csv",
+        "name": "only touch data",
         "x_key": "Size(B)",
-        "y_key": "bandwidth(MB/s)",
+        "y_key": "latency(us)",
         "tag_key": "task",
         "output": "draw/"
     }
-    draw_tag(draw_cofig)
+    draw_tag(draw_cofig, df_touch_data)
+
+    df_focus = df[df.apply(lambda row: "-t 1" in row["task"] and
+                                row["Size(B)"] <= 256, axis=1)]
+    draw_cofig = {
+        "name": "focus",
+        "x_key": "Size(B)",
+        "y_key": "latency(us)",
+        "tag_key": "task",
+        "output": "draw/"
+    }
+    draw_tag(draw_cofig, df_focus)

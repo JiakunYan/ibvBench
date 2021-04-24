@@ -98,8 +98,9 @@ def draw_simple(config):
         json.dump(lines, outfile)
     line_plot(title, x_key, y_key, lines, os.path.join(config["output"], "{}.png".format(config["name"])), False, is_show=False, is_save=True)
 
-def draw_tag(config):
-    df = pd.read_csv(config["input"])
+def draw_tag(config, df = None):
+    if df is None:
+        df = pd.read_csv(config["input"])
     lines = []
     x_key = config["x_key"]
     y_key = config["y_key"]
