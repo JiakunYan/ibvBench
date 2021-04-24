@@ -32,6 +32,9 @@ export CXX=g++
 # record build status
 record_env
 
+mkdir -p log
+mv *.log log
+
 # build FB
 mkdir -p build
 cd build
@@ -47,3 +50,4 @@ make VERBOSE=1 -j | tee init-make.log 2>&1 || { echo "make error!"; exit 1; }
 #echo "Installing taskFlow to ${IBVB_INSTALL_PATH}"
 #mkdir -p ${IBVB_INSTALL_PATH}
 #make install > init-install.log 2>&1 || { echo "install error!"; exit 1; }
+mv *.log ../log

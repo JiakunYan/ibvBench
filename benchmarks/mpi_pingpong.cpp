@@ -2,7 +2,6 @@
 #include <unistd.h>
 #include "bench_common.hpp"
 #include "mlog.h"
-#include "pmi_wrapper.h"
 
 #define MPI_CHECK(stmt)                                          \
 do {                                                             \

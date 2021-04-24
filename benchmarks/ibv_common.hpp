@@ -42,7 +42,13 @@ struct RemoteMemRegion {
     uint32_t rkey;
 };
 
+struct DeviceConfig {
+    bool sendInline = true;
+    int max_inline_data = -1;
+};
+
 struct Device {
+    DeviceConfig config;
     struct ibv_device **dev_list;
     struct ibv_device *ib_dev;
     struct ibv_context *dev_ctx;
@@ -65,11 +71,12 @@ struct Device {
 
 int postRecv(Device *device, void *buf, uint32_t size, uint32_t lkey, void *user_context);
 
-void init(char *devname, Device *device) {
+void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
     MLOG_Init();
     pmi_master_init();
     int rank = pmi_get_rank();
     int nranks = pmi_get_size();
+    device->config = config;
 
     int num_devices;
     device->dev_list = ibv_get_device_list(&num_devices);
@@ -184,23 +191,19 @@ void init(char *devname, Device *device) {
 
     for (int i = 0; i < nranks; i++) {
         {
-            struct ibv_qp_init_attr init_attr = {
-                    .send_cq = device->send_cq,
-                    .recv_cq = device->recv_cq,
-                    .srq = device->dev_srq,
-                    .cap     = {
-                            .max_send_wr  = MAX_SEND_NUM,
-                            .max_recv_wr  = MAX_RECV_NUM,
-                            .max_send_sge = MAX_SGE_NUM,
-                            .max_recv_sge = MAX_SGE_NUM,
-                            // Maximum size in bytes of inline data
-                            // on the send queue
-                            // don't know what this means
-                            .max_inline_data = 0
-                    },
-                    .qp_type = IBV_QPT_RC,
-                    .sq_sig_all = 0
-            };
+            struct ibv_qp_init_attr init_attr;
+            init_attr.send_cq = device->send_cq;
+            init_attr.recv_cq = device->recv_cq;
+            init_attr.srq = device->dev_srq;
+            init_attr.cap.max_send_wr  = MAX_SEND_NUM;
+            init_attr.cap.max_recv_wr  = MAX_RECV_NUM;
+            init_attr.cap.max_send_sge = MAX_SGE_NUM;
+            init_attr.cap.max_recv_sge = MAX_SGE_NUM;
+            // Maximum size in bytes of inline data on the send queue
+            // don't know what this means
+            init_attr.cap.max_inline_data = 0;
+            init_attr.qp_type = IBV_QPT_RC;
+            init_attr.sq_sig_all = 0;
             device->qps[i] = ibv_create_qp(device->dev_pd, &init_attr);
 
             if (!device->qps[i])  {
@@ -210,21 +213,25 @@ void init(char *devname, Device *device) {
 
             struct ibv_qp_attr attr;
             ibv_query_qp(device->qps[i], &attr, IBV_QP_CAP, &init_attr);
-            MLOG_Log(MLOG_LOG_INFO, "Maximum inline data size is %d\n",
-                     init_attr.cap.max_inline_data);
+            MLOG_Assert(device->config.max_inline_data == -1 ||
+                        device->config.max_inline_data == init_attr.cap.max_inline_data,
+                        "I'd be surprised if %d != %d", device->config.max_inline_data,
+                        init_attr.cap.max_inline_data);
+            device->config.max_inline_data = init_attr.cap.max_inline_data;
         }
+        MLOG_Log(MLOG_LOG_INFO, "Maximum inline data size is %d\n",
+                 device->config.max_inline_data);
         {
             // When a queue pair (QP) is newly created, it is in the RESET
             // state. The first state transition that needs to happen is to
             // bring the QP in the INIT state.
-            struct ibv_qp_attr attr = {
-                    .qp_state        = IBV_QPS_INIT,
-                    .qp_access_flags = IBV_ACCESS_LOCAL_WRITE |
-                                       IBV_ACCESS_REMOTE_READ |
-                                       IBV_ACCESS_REMOTE_WRITE,
-                    .pkey_index      = 0,
-                    .port_num        = device->dev_port,
-            };
+            struct ibv_qp_attr attr;
+            attr.qp_state        = IBV_QPS_INIT;
+            attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE |
+                                   IBV_ACCESS_REMOTE_READ |
+                                   IBV_ACCESS_REMOTE_WRITE;
+            attr.pkey_index      = 0;
+            attr.port_num        = device->dev_port;
 
             int flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX |
                         IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
@@ -265,28 +272,25 @@ void init(char *devname, Device *device) {
         // Once a queue pair (QP) has receive buffers posted to it, it is now
         // possible to transition the QP into the ready to receive (RTR) state.
         {
-            struct ibv_qp_attr attr = {
-                    .qp_state		= IBV_QPS_RTR,
-                    .path_mtu		= device->port_attr.active_mtu,
-                    // starting receive packet sequence number
-                    // (should match remote QP's sq_psn)
-                    .rq_psn			= 0,
-                    .dest_qp_num	= dest_qpn,
-                    // an address handle (AH) needs to be created and filled in as
-                    // appropriate. Minimally, ah_attr.dlid needs to be filled in.
-                    .ah_attr		= {
-                            .dlid		= dest_lid,
-                            .sl		= 0,
-                            .src_path_bits	= 0,
-                            .is_global	= 0,
-                            .port_num	= device->dev_port
-                    },
-                    // maximum number of resources for incoming RDMA requests
-                    // don't know what this is
-                    .max_dest_rd_atomic	= 1,
-                    // minimum RNR NAK timer (recommended value: 12)
-                    .min_rnr_timer		= 12,
-            };
+            struct ibv_qp_attr attr;
+            attr.qp_state		= IBV_QPS_RTR;
+            attr.path_mtu		= device->port_attr.active_mtu;
+            // starting receive packet sequence number
+            // (should match remote QP's sq_psn)
+            attr.rq_psn			= 0;
+            attr.dest_qp_num	= dest_qpn;
+            // an address handle (AH) needs to be created and filled in as
+            // appropriate. Minimally; ah_attr.dlid needs to be filled in.
+            attr.ah_attr.dlid		= dest_lid;
+            attr.ah_attr.sl		= 0;
+            attr.ah_attr.src_path_bits	= 0;
+            attr.ah_attr.is_global	= 0;
+            attr.ah_attr.port_num	= device->dev_port;
+            // maximum number of resources for incoming RDMA requests
+            // don't know what this is
+            attr.max_dest_rd_atomic	= 1;
+            // minimum RNR NAK timer (recommended value: 12)
+            attr.min_rnr_timer		= 12;
             // should not be necessary to set these, given is_global = 0
 //            memset(&attr.ah_attr.grh.dgid, 0, sizeof attr.ah_attr.grh.dgid);
 //            attr.ah_attr.grh.sgid_index = -1;  // gid
@@ -303,15 +307,14 @@ void init(char *devname, Device *device) {
         // Once a queue pair (QP) has reached ready to receive (RTR) state,
         // it may then be transitioned to the ready to send (RTS) state.
         {
-            struct ibv_qp_attr attr {
-                    .qp_state = IBV_QPS_RTS,
-                    .sq_psn = 0,
-                    // number of outstanding RDMA reads and atomic operations allowed
-                    .max_rd_atomic = 1,
-                    .timeout = 14,
-                    .retry_cnt = 7,
-                    .rnr_retry = 7,
-            };
+            struct ibv_qp_attr attr;
+            attr.qp_state = IBV_QPS_RTS;
+            attr.sq_psn = 0;
+            // number of outstanding RDMA reads and atomic operations allowed
+            attr.max_rd_atomic = 1;
+            attr.timeout = 14;
+            attr.retry_cnt = 7;
+            attr.rnr_retry = 7;
 
             int flags = IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
                         IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC;
@@ -321,11 +324,9 @@ void init(char *devname, Device *device) {
                 exit(EXIT_FAILURE);
             }
         }
-        device->rmrs[i] = RemoteMemRegion {
-                .addr = dest_addr,
-                .size = MR_SIZE,
-                .rkey = dest_rkey
-        };
+        device->rmrs[i].addr = dest_addr;
+        device->rmrs[i].size = MR_SIZE;
+        device->rmrs[i].rkey = dest_rkey;
     }
 
     int j = nranks;
@@ -371,17 +372,15 @@ inline struct ibv_wc pollCQ(struct ibv_cq *cq) {
 
 inline int postRecv(Device *device, void *buf, uint32_t size, uint32_t lkey, void *user_context)
 {
-    struct ibv_sge list = {
-            .addr	= (uint64_t) buf,
-            .length = size,
-            .lkey	= lkey
-    };
-    struct ibv_recv_wr wr = {
-            .wr_id	    = (uint64_t) user_context,
-            .next       = NULL,
-            .sg_list    = &list,
-            .num_sge    = 1,
-    };
+    struct ibv_sge list;
+    list.addr	= (uint64_t) buf;
+    list.length = size;
+    list.lkey	= lkey;
+    struct ibv_recv_wr wr;
+    wr.wr_id	    = (uint64_t) user_context;
+    wr.next       = NULL;
+    wr.sg_list    = &list;
+    wr.num_sge    = 1;
     struct ibv_recv_wr *bad_wr;
     ++device->posted_recv_num;
     return ibv_post_srq_recv(device->dev_srq, &wr, &bad_wr);
@@ -398,19 +397,20 @@ inline void checkAndPostRecvs(Device *device) {
 
 inline int postSend(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey, void *user_context)
 {
-    struct ibv_sge list = {
-            .addr	= (uint64_t) buf,
-            .length = size,
-            .lkey	= lkey
-    };
-    struct ibv_send_wr wr = {
-            .wr_id	    = (uint64_t) user_context,
-            .next       = NULL,
-            .sg_list    = &list,
-            .num_sge    = 1,
-            .opcode     = IBV_WR_SEND,
-            .send_flags = IBV_SEND_SIGNALED,
-    };
+    struct ibv_sge list;
+    list.addr	= (uint64_t) buf;
+    list.length = size;
+    list.lkey	= lkey;
+    struct ibv_send_wr wr;
+    wr.wr_id	    = (uint64_t) user_context;
+    wr.next       = NULL;
+    wr.sg_list    = &list;
+    wr.num_sge    = 1;
+    wr.opcode     = IBV_WR_SEND;
+    wr.send_flags = IBV_SEND_SIGNALED;
+    if (device->config.sendInline && size <= device->config.max_inline_data) {
+        wr.send_flags |= IBV_SEND_INLINE;
+    }
     struct ibv_send_wr *bad_wr;
 
     return ibv_post_send(device->qps[rank], &wr, &bad_wr);
@@ -419,23 +419,22 @@ inline int postSend(Device *device, int rank, void *buf, uint32_t size, uint32_t
 inline int postWrite(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
               uintptr_t remote_addr, uint32_t rkey, void *user_context)
 {
-    struct ibv_sge list = {
-            .addr	= (uint64_t) buf,
-            .length = size,
-            .lkey	= lkey
-    };
-    struct ibv_send_wr wr = {
-            .wr_id	    = (uint64_t) user_context,
-            .next       = NULL,
-            .sg_list    = &list,
-            .num_sge    = 1,
-            .opcode     = IBV_WR_RDMA_WRITE,
-            .send_flags = IBV_SEND_SIGNALED,
-    };
-    wr.wr.rdma = {
-            .remote_addr = remote_addr,
-            .rkey = rkey,
-    };
+    struct ibv_sge list;
+    list.addr	= (uint64_t) buf;
+    list.length = size;
+    list.lkey	= lkey;
+    struct ibv_send_wr wr;
+    wr.wr_id	    = (uint64_t) user_context;
+    wr.next       = NULL;
+    wr.sg_list    = &list;
+    wr.num_sge    = 1;
+    wr.opcode     = IBV_WR_RDMA_WRITE;
+    wr.send_flags = IBV_SEND_SIGNALED;
+    wr.wr.rdma.remote_addr = remote_addr;
+    wr.wr.rdma.rkey = rkey;
+    if (device->config.sendInline && size <= device->config.max_inline_data) {
+        wr.send_flags |= IBV_SEND_INLINE;
+    }
     struct ibv_send_wr *bad_wr;
 
     return ibv_post_send(device->qps[rank], &wr, &bad_wr);
@@ -444,28 +443,26 @@ inline int postWrite(Device *device, int rank, void *buf, uint32_t size, uint32_
 inline int postWriteImm(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
                  uintptr_t remote_addr, uint32_t rkey, uint32_t data, void *user_context)
 {
-    struct ibv_sge list = {
-            .addr	= (uint64_t) buf,
-            .length = size,
-            .lkey	= lkey
-    };
-    struct ibv_send_wr wr = {
-            .wr_id	    = (uint64_t) user_context,
-            .next       = NULL,
-            .sg_list    = &list,
-            .num_sge    = 1,
-            .opcode     = IBV_WR_RDMA_WRITE_WITH_IMM,
-            .send_flags = IBV_SEND_SIGNALED,
-            .imm_data   = data,
-    };
-    wr.wr.rdma = {
-            .remote_addr = remote_addr,
-            .rkey = rkey,
-    };
+    struct ibv_sge list;
+    list.addr	= (uint64_t) buf;
+    list.length = size;
+    list.lkey	= lkey;
+    struct ibv_send_wr wr;
+    wr.wr_id	    = (uint64_t) user_context;
+    wr.next       = NULL;
+    wr.sg_list    = &list;
+    wr.num_sge    = 1;
+    wr.opcode     = IBV_WR_RDMA_WRITE_WITH_IMM;
+    wr.send_flags = IBV_SEND_SIGNALED;
+    wr.imm_data   = data;
+    wr.wr.rdma.remote_addr = remote_addr;
+    wr.wr.rdma.rkey = rkey;
+    if (device->config.sendInline && size <= device->config.max_inline_data) {
+        wr.send_flags |= IBV_SEND_INLINE;
+    }
     struct ibv_send_wr *bad_wr;
 
     return ibv_post_send(device->qps[rank], &wr, &bad_wr);
 }
 } // namespace ibv
-
 #endif//IBVBENCH_IBV_COMMON_HPP
