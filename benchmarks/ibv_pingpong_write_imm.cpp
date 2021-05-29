@@ -8,6 +8,7 @@ struct Config {
     bool touch_data = true;
     int min_msg_size = 8;
     int max_msg_size = 64 * 1024;
+    int inline_size = 220;
 };
 
 Config parseArgs(int argc, char **argv) {
@@ -19,15 +20,21 @@ Config parseArgs(int argc, char **argv) {
             {"min-msg-size", required_argument, 0, 'a'},
             {"max-msg-size", required_argument, 0, 'b'},
             {"touch-data",   required_argument, 0, 't'},
+            {"inline-size",  required_argument, 0, 'i'},
     };
-    while ((opt = getopt_long(argc, argv, "t:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "t:i:", long_options, NULL)) != -1) {
         switch (opt) {
             case 'a':
                 config.min_msg_size = atoi(optarg);
+                break;
             case 'b':
                 config.max_msg_size = atoi(optarg);
+                break;
             case 't':
                 config.touch_data = atoi(optarg);
+                break;
+            case 'i':
+                config.inline_size = atoi(optarg);
                 break;
             default:
                 break;
@@ -38,13 +45,15 @@ Config parseArgs(int argc, char **argv) {
 
 int run(Config config) {
     ibv::Device device;
-    ibv::init(NULL, &device);
+    ibv::DeviceConfig deviceConfig;
+    deviceConfig.inline_size = config.inline_size;
+    ibv::init(NULL, &device, deviceConfig);
     int rank = pmi_get_rank();
     int nranks = pmi_get_size();
     MLOG_Assert(nranks == 2, "This benchmark requires exactly two processes\n");
     char value = 'a' + rank;
     char peer_value = 'a' + 1 - rank;
-    memset(device.mr_addr, 0, ibv::MR_SIZE);
+    memset(device.mr_addr, 0, config.max_msg_size);
     pmi_barrier();
 
     if (rank == 0) {

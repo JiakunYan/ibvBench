@@ -7,8 +7,8 @@ import os,sys
 sys.path.append("../../include")
 from draw_simple import *
 
-name = "basic"
-input_path = "run/slurm_output.basic-*"
+name = "inline_size"
+input_path = "run/slurm_output.inline_size-*"
 output_path = "draw/"
 edge_srun = {
     "format": "srun -n 2 (.+)",
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     df.to_csv(os.path.join(output_path, "{}.csv".format(name)))
 
     draw_cofig = {
-        "name": "latency",
+        "name": "latency-inline",
         "x_key": "Size(B)",
         "y_key": "latency(us)",
         "tag_key": "task",
@@ -74,20 +74,10 @@ if __name__ == "__main__":
     }
     draw_tag(draw_cofig, df)
 
-    df_touch_data = df[df.apply(lambda row: "-t 1" in row["task"], axis=1)]
-    draw_cofig = {
-        "name": "only touch data",
-        "x_key": "Size(B)",
-        "y_key": "latency(us)",
-        "tag_key": "task",
-        "output": "draw/"
-    }
-    draw_tag(draw_cofig, df_touch_data)
-
     df_focus = df[df.apply(lambda row: "-t 1" in row["task"] and
-                                row["Size(B)"] <= 256, axis=1)]
+                                row["Size(B)"] <= 512, axis=1)]
     draw_cofig = {
-        "name": "focus",
+        "name": "focus-inline",
         "x_key": "Size(B)",
         "y_key": "latency(us)",
         "tag_key": "task",

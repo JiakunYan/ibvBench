@@ -27,14 +27,8 @@ const char *mtu_str(enum ibv_mtu mtu)
 } // namespace ibv
 
 namespace ibv {
-const int MAX_SEND_NUM = 256;
-const int MAX_RECV_NUM = 8;
-const int MIN_RECV_NUM = 4;
-const int MAX_SGE_NUM = 1;
-const int MAX_CQE_NUM = MAX_RECV_NUM + 1;
 const int CACHE_LINE_SIZE = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
 const int PAGE_SIZE = sysconf(_SC_PAGESIZE);
-const int MR_SIZE = 64 * 1024; // 64KB for now
 
 struct RemoteMemRegion {
     uintptr_t addr;
@@ -43,8 +37,14 @@ struct RemoteMemRegion {
 };
 
 struct DeviceConfig {
-    bool sendInline = true;
-    int max_inline_data = -1;
+    bool send_inline = true;
+    int inline_size = 0;
+    int max_send_num = 8;
+    int max_recv_num = 8;
+    int min_recv_num = 8;
+    int max_sge_num = 1;
+    int max_cqe_num = max_recv_num + 1;
+    int mr_size = 64 * 1024; // 64KB for now
 };
 
 struct Device {
@@ -152,8 +152,8 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
     struct ibv_srq_init_attr srq_attr;
     memset(&srq_attr, 0, sizeof(srq_attr));
     srq_attr.srq_context = NULL;
-    srq_attr.attr.max_wr = MAX_RECV_NUM;
-    srq_attr.attr.max_sge = MAX_SGE_NUM;
+    srq_attr.attr.max_wr = device->config.max_recv_num;
+    srq_attr.attr.max_sge = device->config.max_sge_num;
     srq_attr.attr.srq_limit = 0;
     device->dev_srq = ibv_create_srq(device->dev_pd, &srq_attr);
     if (!device->dev_srq) {
@@ -162,8 +162,8 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
     }
 
     // Create completion queues.
-    device->send_cq = ibv_create_cq(device->dev_ctx, MAX_CQE_NUM, NULL, NULL, 0);
-    device->recv_cq = ibv_create_cq(device->dev_ctx, MAX_CQE_NUM, NULL, NULL, 0);
+    device->send_cq = ibv_create_cq(device->dev_ctx, device->config.max_cqe_num, NULL, NULL, 0);
+    device->recv_cq = ibv_create_cq(device->dev_ctx, device->config.max_cqe_num, NULL, NULL, 0);
     if (!device->send_cq || !device->recv_cq) {
         fprintf(stderr, "Unable to create cq\n");
         exit(EXIT_FAILURE);
@@ -172,13 +172,13 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
     // Create RDMA memory.
     int mr_flags =
             IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
-    posix_memalign(&device->mr_addr, PAGE_SIZE, MR_SIZE);
+    posix_memalign(&device->mr_addr, PAGE_SIZE, device->config.mr_size);
     if (!device->mr_addr) {
         fprintf(stderr, "Unable to allocate memory\n");
         exit(EXIT_FAILURE);
     }
-    device->mr_size = MR_SIZE;
-    device->dev_mr = ibv_reg_mr(device->dev_pd, device->mr_addr, MR_SIZE, mr_flags);
+    device->mr_size = device->config.mr_size;
+    device->dev_mr = ibv_reg_mr(device->dev_pd, device->mr_addr, device->config.mr_size, mr_flags);
     if (!device->dev_mr) {
         fprintf(stderr, "Unable to register memory region\n");
         exit(EXIT_FAILURE);
@@ -197,13 +197,11 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
             init_attr.send_cq = device->send_cq;
             init_attr.recv_cq = device->recv_cq;
             init_attr.srq = device->dev_srq;
-            init_attr.cap.max_send_wr  = MAX_SEND_NUM;
-            init_attr.cap.max_recv_wr  = MAX_RECV_NUM;
-            init_attr.cap.max_send_sge = MAX_SGE_NUM;
-            init_attr.cap.max_recv_sge = MAX_SGE_NUM;
-            // Maximum size in bytes of inline data on the send queue
-            // don't know what this means
-            init_attr.cap.max_inline_data = 0;
+            init_attr.cap.max_send_wr  = device->config.max_send_num;
+            init_attr.cap.max_recv_wr  = device->config.max_recv_num;
+            init_attr.cap.max_send_sge = device->config.max_sge_num;
+            init_attr.cap.max_recv_sge = device->config.max_sge_num;
+            init_attr.cap.max_inline_data = device->config.inline_size;
             init_attr.qp_type = IBV_QPT_RC;
             init_attr.sq_sig_all = 0;
             device->qps[i] = ibv_create_qp(device->dev_pd, &init_attr);
@@ -216,14 +214,16 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
             struct ibv_qp_attr attr;
             memset(&attr, 0, sizeof(attr));
             ibv_query_qp(device->qps[i], &attr, IBV_QP_CAP, &init_attr);
-            MLOG_Assert(device->config.max_inline_data == -1 ||
-                        device->config.max_inline_data == init_attr.cap.max_inline_data,
-                        "I'd be surprised if %d != %d", device->config.max_inline_data,
+            MLOG_Assert(init_attr.cap.max_inline_data >= device->config.inline_size,
+                        "Specified inline size %d is too large (maximum %d)", device->config.inline_size,
                         init_attr.cap.max_inline_data);
-            device->config.max_inline_data = init_attr.cap.max_inline_data;
+            if (device->config.inline_size < attr.cap.max_inline_data) {
+                MLOG_Log(MLOG_LOG_INFO, "Maximum inline-size(%d) > requested inline-size(%d)\n",
+                       attr.cap.max_inline_data, device->config.inline_size);
+            }
         }
-        MLOG_Log(MLOG_LOG_INFO, "Maximum inline data size is %d\n",
-                 device->config.max_inline_data);
+        MLOG_Log(MLOG_LOG_INFO, "Current inline data size is %d\n",
+                 device->config.inline_size);
         {
             // When a queue pair (QP) is newly created, it is in the RESET
             // state. The first state transition that needs to happen is to
@@ -247,7 +247,7 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
         }
         // At least one receive buffer should be posted
         // before the QP can be transitioned to the RTR state
-        for (int j = 0; j < MAX_RECV_NUM-1; ++j) {
+        for (int j = 0; j < device->config.max_recv_num-1 /*error without -1, don't know why*/; ++j) {
             rc = postRecv(device, device->mr_addr, device->mr_size,
                           device->dev_mr->lkey, NULL);
             if (rc != 0) {
@@ -331,7 +331,7 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
             }
         }
         device->rmrs[i].addr = dest_addr;
-        device->rmrs[i].size = MR_SIZE;
+        device->rmrs[i].size = device->config.mr_size;
         device->rmrs[i].rkey = dest_rkey;
     }
 
@@ -393,8 +393,8 @@ inline int postRecv(Device *device, void *buf, uint32_t size, uint32_t lkey, voi
 }
 
 inline void checkAndPostRecvs(Device *device) {
-    if (device->posted_recv_num < ibv::MIN_RECV_NUM) {
-        for (int j = device->posted_recv_num; j < ibv::MAX_RECV_NUM; ++j) {
+    if (device->posted_recv_num < device->config.min_recv_num) {
+        for (int j = device->posted_recv_num; j < device->config.min_recv_num; ++j) {
             int ret = ibv::postRecv(device, device->mr_addr, device->mr_size, device->dev_mr->rkey, NULL);
             MLOG_Assert(ret == 0, "Post Recv %d failed!\n", j);
         }
@@ -414,7 +414,7 @@ inline int postSend(Device *device, int rank, void *buf, uint32_t size, uint32_t
     wr.num_sge    = 1;
     wr.opcode     = IBV_WR_SEND;
     wr.send_flags = IBV_SEND_SIGNALED;
-    if (device->config.sendInline && size <= device->config.max_inline_data) {
+    if (device->config.send_inline && size <= device->config.inline_size) {
         wr.send_flags |= IBV_SEND_INLINE;
     }
     struct ibv_send_wr *bad_wr;
@@ -438,7 +438,7 @@ inline int postWrite(Device *device, int rank, void *buf, uint32_t size, uint32_
     wr.send_flags = IBV_SEND_SIGNALED;
     wr.wr.rdma.remote_addr = remote_addr;
     wr.wr.rdma.rkey = rkey;
-    if (device->config.sendInline && size <= device->config.max_inline_data) {
+    if (device->config.send_inline && size <= device->config.inline_size) {
         wr.send_flags |= IBV_SEND_INLINE;
     }
     struct ibv_send_wr *bad_wr;
@@ -463,7 +463,7 @@ inline int postWriteImm(Device *device, int rank, void *buf, uint32_t size, uint
     wr.imm_data   = data;
     wr.wr.rdma.remote_addr = remote_addr;
     wr.wr.rdma.rkey = rkey;
-    if (device->config.sendInline && size <= device->config.max_inline_data) {
+    if (device->config.send_inline && size <= device->config.inline_size) {
         wr.send_flags |= IBV_SEND_INLINE;
     }
     struct ibv_send_wr *bad_wr;

@@ -35,8 +35,10 @@ Config parseArgs(int argc, char **argv) {
         switch (opt) {
             case 'a':
                 config.min_msg_size = atoi(optarg);
+                break;
             case 'b':
                 config.max_msg_size = atoi(optarg);
+                break;
             case 't':
                 config.touch_data = atoi(optarg);
                 break;
