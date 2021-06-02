@@ -179,6 +179,9 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
     }
     device->mr_size = device->config.mr_size;
     device->dev_mr = ibv_reg_mr(device->dev_pd, device->mr_addr, device->config.mr_size, mr_flags);
+    MLOG_Log(MLOG_LOG_INFO, "register memory: %p %lu %u %u\n",
+             device->dev_mr->addr, device->dev_mr->length, device->dev_mr->lkey,
+             device->dev_mr->rkey);
     if (!device->dev_mr) {
         fprintf(stderr, "Unable to register memory region\n");
         exit(EXIT_FAILURE);
@@ -247,14 +250,14 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
         }
         // At least one receive buffer should be posted
         // before the QP can be transitioned to the RTR state
-        for (int j = 0; j < device->config.max_recv_num-1 /*error without -1, don't know why*/; ++j) {
-            rc = postRecv(device, device->mr_addr, device->mr_size,
-                          device->dev_mr->lkey, NULL);
-            if (rc != 0) {
-                fprintf(stderr, "Failed to post recv %d\n", j);
-                exit(EXIT_FAILURE);
-            }
-        }
+//        for (int j = 0; j < device->config.max_recv_num-1 /*error without -1, don't know why*/; ++j) {
+//            rc = postRecv(device, device->mr_addr, device->mr_size,
+//                          device->dev_mr->lkey, NULL);
+//            if (rc != 0) {
+//                fprintf(stderr, "Failed to post recv %d\n", j);
+//                exit(EXIT_FAILURE);
+//            }
+//        }
         // Use this queue pair "i" to connect to rank e.
         char ep_name[256];
         sprintf(ep_name, "%lx:%x:%x:%hx",
@@ -378,6 +381,8 @@ inline struct ibv_wc pollCQ(struct ibv_cq *cq) {
 
 inline int postRecv(Device *device, void *buf, uint32_t size, uint32_t lkey, void *user_context)
 {
+    MLOG_DBG_Log(MLOG_LOG_DEBUG, "postRecv: %p %u %u %p\n", buf,
+                 size, lkey, user_context);
     struct ibv_sge list;
     list.addr	= (uint64_t) buf;
     list.length = size;
@@ -392,10 +397,10 @@ inline int postRecv(Device *device, void *buf, uint32_t size, uint32_t lkey, voi
     return ibv_post_srq_recv(device->dev_srq, &wr, &bad_wr);
 }
 
-inline void checkAndPostRecvs(Device *device) {
+inline void checkAndPostRecvs(Device *device, void *buf, uint32_t size, uint32_t lkey, void *user_context) {
     if (device->posted_recv_num < device->config.min_recv_num) {
-        for (int j = device->posted_recv_num; j < device->config.min_recv_num; ++j) {
-            int ret = ibv::postRecv(device, device->mr_addr, device->mr_size, device->dev_mr->rkey, NULL);
+        for (int j = device->posted_recv_num; j < device->config.max_recv_num; ++j) {
+            int ret = ibv::postRecv(device, buf, size, lkey, user_context);
             MLOG_Assert(ret == 0, "Post Recv %d failed!\n", j);
         }
     }
@@ -422,9 +427,36 @@ inline int postSend(Device *device, int rank, void *buf, uint32_t size, uint32_t
     return ibv_post_send(device->qps[rank], &wr, &bad_wr);
 }
 
+inline int postSendImm(Device *device, int rank, void *buf, uint32_t size,
+                       uint32_t lkey, uint32_t data, void *user_context)
+{
+    MLOG_DBG_Log(MLOG_LOG_DEBUG, "postSendImm: %d %p %u %u %u %p\n", rank, buf,
+                 size, lkey, data, user_context);
+    struct ibv_sge list;
+    list.addr	= (uint64_t) buf;
+    list.length = size;
+    list.lkey	= lkey;
+    struct ibv_send_wr wr;
+    wr.wr_id	    = (uint64_t) user_context;
+    wr.next       = NULL;
+    wr.sg_list    = &list;
+    wr.num_sge    = 1;
+    wr.opcode     = IBV_WR_SEND_WITH_IMM;
+    wr.send_flags = IBV_SEND_SIGNALED;
+    wr.imm_data   = data;
+    if (device->config.send_inline && size <= device->config.inline_size) {
+        wr.send_flags |= IBV_SEND_INLINE;
+    }
+    struct ibv_send_wr *bad_wr;
+
+    return ibv_post_send(device->qps[rank], &wr, &bad_wr);
+}
+
 inline int postWrite(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
               uintptr_t remote_addr, uint32_t rkey, void *user_context)
 {
+    MLOG_DBG_Log(MLOG_LOG_DEBUG, "postWrite: %d %p %u %u %p %u %p\n", rank, buf,
+                 size, lkey, (void*) remote_addr, rkey, user_context);
     struct ibv_sge list;
     list.addr	= (uint64_t) buf;
     list.length = size;

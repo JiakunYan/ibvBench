@@ -5,7 +5,7 @@ set -e
 # import the the script containing common functions
 source ../../include/scripts.sh
 
-task="inline_size.slurm"
+task="basic.slurm"
 sbatch_path=$(realpath "${sbatch_path:-.}")
 exe_path=$(realpath "${exe_path:-init/build/benchmarks}")
 

@@ -14,3 +14,5 @@ if(MPI_FOUND)
     target_compile_options(mpi_pingpong PRIVATE ${MPI_CXX_COMPILE_FLAGS})
     target_link_libraries(mpi_pingpong PRIVATE ${MPI_CXX_LIBRARIES} ${MPI_CXX_LINK_FLAGS} mlog-lib)
 endif()
+
+add_subdirectory(rendezvous)

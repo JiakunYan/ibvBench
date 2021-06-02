@@ -47,6 +47,7 @@ int run(Config config) {
     ibv::Device device;
     ibv::DeviceConfig deviceConfig;
     deviceConfig.inline_size = config.inline_size;
+    deviceConfig.mr_size = config.max_msg_size;
     ibv::init(NULL, &device, deviceConfig);
     int rank = pmi_get_rank();
     int nranks = pmi_get_size();
@@ -56,6 +57,7 @@ int run(Config config) {
     volatile char *buf = (char*) device.mr_addr;
     memset(device.mr_addr, 0, config.max_msg_size);
     pmi_barrier();
+    ibv::checkAndPostRecvs(&device, device.mr_addr, device.mr_size, device.dev_mr->lkey, device.mr_addr);
 
     if (rank == 0) {
         RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, true, [&](int msg_size, int iter) {
@@ -67,7 +69,7 @@ int run(Config config) {
                 buf[0] = value;
                 buf[msg_size - 1] = value;
             }
-            int ret = ibv::postWrite(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->rkey,
+            int ret = ibv::postWrite(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->lkey,
                                      device.rmrs[1-rank].addr, device.rmrs[1-rank].rkey, NULL);
             MLOG_Assert(ret == 0, "Post Write failed!");
 
@@ -95,7 +97,7 @@ int run(Config config) {
                 buf[0] = value;
                 buf[msg_size - 1] = value;
             }
-            int ret = ibv::postWrite(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->rkey,
+            int ret = ibv::postWrite(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->lkey,
                                    device.rmrs[1-rank].addr, device.rmrs[1-rank].rkey, NULL);
             MLOG_Assert(ret == 0, "Post Write failed!");
 

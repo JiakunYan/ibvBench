@@ -9,10 +9,10 @@
 #include <getopt.h>
 
 #define LARGE 8192
-#define TOTAL 40000
-#define SKIP 10000
-#define TOTAL_LARGE 10000
-#define SKIP_LARGE 1000
+#define TOTAL 4000
+#define SKIP 1000
+#define TOTAL_LARGE 1000
+#define SKIP_LARGE 100
 
 namespace bench {
 static inline double wtime() {

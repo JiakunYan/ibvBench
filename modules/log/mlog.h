@@ -12,6 +12,10 @@ extern "C" {
 #define MLOG_Assert(Expr, ...) \
         MLOG_Assert_(#Expr, Expr, __FILE__, __func__, __LINE__, __VA_ARGS__)
 
+#ifndef NDEBUG
+#define MLOG_DEBUG
+#endif
+
 #ifdef MLOG_DEBUG
 #define MLOG_DBG_Assert(...) MLOG_Assert(__VA_ARGS__)
 #define MLOG_DBG_Log(...) MLOG_Log(__VA_ARGS__)
