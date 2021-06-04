@@ -502,5 +502,31 @@ inline int postWriteImm(Device *device, int rank, void *buf, uint32_t size, uint
 
     return ibv_post_send(device->qps[rank], &wr, &bad_wr);
 }
+
+inline int postRead(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
+                     uintptr_t remote_addr, uint32_t rkey, void *user_context)
+{
+    MLOG_DBG_Log(MLOG_LOG_DEBUG, "postRead: %d %p %u %u %p %u %p\n", rank, buf,
+                 size, lkey, (void*) remote_addr, rkey, user_context);
+    struct ibv_sge list;
+    list.addr	= (uint64_t) buf;
+    list.length = size;
+    list.lkey	= lkey;
+    struct ibv_send_wr wr;
+    wr.wr_id	    = (uint64_t) user_context;
+    wr.next       = NULL;
+    wr.sg_list    = &list;
+    wr.num_sge    = 1;
+    wr.opcode     = IBV_WR_RDMA_READ;
+    wr.send_flags = IBV_SEND_SIGNALED;
+    wr.wr.rdma.remote_addr = remote_addr;
+    wr.wr.rdma.rkey = rkey;
+    if (device->config.send_inline && size <= device->config.inline_size) {
+        wr.send_flags |= IBV_SEND_INLINE;
+    }
+    struct ibv_send_wr *bad_wr;
+
+    return ibv_post_send(device->qps[rank], &wr, &bad_wr);
+}
 } // namespace ibv
 #endif//IBVBENCH_IBV_COMMON_HPP
