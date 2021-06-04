@@ -408,6 +408,8 @@ inline void checkAndPostRecvs(Device *device, void *buf, uint32_t size, uint32_t
 
 inline int postSend(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey, void *user_context)
 {
+    MLOG_DBG_Log(MLOG_LOG_DEBUG, "postSend: %d %p %u %u %p\n", rank, buf,
+                 size, lkey, user_context);
     struct ibv_sge list;
     list.addr	= (uint64_t) buf;
     list.length = size;
@@ -521,9 +523,6 @@ inline int postRead(Device *device, int rank, void *buf, uint32_t size, uint32_t
     wr.send_flags = IBV_SEND_SIGNALED;
     wr.wr.rdma.remote_addr = remote_addr;
     wr.wr.rdma.rkey = rkey;
-    if (device->config.send_inline && size <= device->config.inline_size) {
-        wr.send_flags |= IBV_SEND_INLINE;
-    }
     struct ibv_send_wr *bad_wr;
 
     return ibv_post_send(device->qps[rank], &wr, &bad_wr);
