@@ -79,7 +79,15 @@ RTRMsg *rtrMsg;
 FINMsg *finMsg;
 void *control_recv_buf;
 
-int postRTS(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey, void *user_context) {
+struct ibv_wc pollRecvCQ(Device *device) {
+    struct ibv_wc wc = pollCQ(device->recv_cq);
+    MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV, "Recv RTS completion failed!\n");
+    --device->posted_recv_num;
+    checkAndPostRecvs(device, control_recv_buf, CACHE_LINE_SIZE, device->dev_mr->lkey, control_recv_buf);
+    return wc;
+}
+
+void postRTS(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey, void *user_context) {
     SendCtx *ctx = (SendCtx*) malloc(sizeof(SendCtx));
     ctx->buf = buf;
     ctx->size = size;
@@ -87,10 +95,11 @@ int postRTS(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey, v
     ctx->user_context = user_context;
     rtsMsg->send_ctx = (uintptr_t) ctx;
     rtsMsg->size = size;
-    return postSendImm(device, rank, rtsMsg, sizeof(RTSMsg), device->dev_mr->lkey, MSG_RTS, NULL);
+    int ret = postSendImm(device, rank, rtsMsg, sizeof(RTSMsg), device->dev_mr->lkey, MSG_RTS, NULL);
+    MLOG_Assert(ret == 0, "\n");
 }
 
-int handleRTS(Device *device, struct ibv_wc wc, void *buf, uint32_t size, uint32_t lkey, void *user_context) {
+void handleRTS(Device *device, struct ibv_wc wc, void *buf, uint32_t size, uint32_t lkey, void *user_context) {
     MLOG_Assert(wc.opcode == IBV_WC_RECV, "");
     MLOG_Assert(wc.imm_data == MSG_RTS, "");
     RTSMsg *recvRTSMsg = (RTSMsg*) wc.wr_id;
@@ -104,35 +113,47 @@ int handleRTS(Device *device, struct ibv_wc wc, void *buf, uint32_t size, uint32
     rtrMsg->recv_ctx = (uintptr_t) ctx;
     rtrMsg->remote_addr = (uintptr_t) buf;
     rtrMsg->rkey = device->dev_mr->rkey;
-    return postSendImm(device, src_rank, rtrMsg, sizeof(RTRMsg),
-                       device->dev_mr->lkey, MSG_RTR, NULL);
+    int ret= postSendImm(device, src_rank, rtrMsg, sizeof(RTRMsg),
+                         device->dev_mr->lkey, MSG_RTR, NULL);
+    MLOG_Assert(ret == 0, "\n");
 }
 
-int handleRTR(Device *device, struct ibv_wc wc) {
+void handleRTR(Device *device, struct ibv_wc wc) {
     MLOG_Assert(wc.opcode == IBV_WC_RECV, "");
     MLOG_Assert(wc.imm_data == MSG_RTR, "");
     RTRMsg *recvRTRMsg = (RTRMsg*) wc.wr_id;
     int src_rank = device->qp2rank[wc.qp_num % device->qp2rank_mod];
     SendCtx *ctx = (SendCtx*)recvRTRMsg->send_ctx;
     ctx->recv_ctx = recvRTRMsg->recv_ctx;
-    return postWrite(device, src_rank, ctx->buf, ctx->size, ctx->lkey,
-                     recvRTRMsg->remote_addr, recvRTRMsg->rkey, ctx);
+    int ret = postWrite(device, src_rank, ctx->buf, ctx->size, ctx->lkey,
+                        recvRTRMsg->remote_addr, recvRTRMsg->rkey, ctx);
+
+    MLOG_Assert(ret == 0, "\n");
 }
 
-int handleWriteCompletion(Device *device, struct ibv_wc wc) {
-    MLOG_Assert(wc.opcode == IBV_WC_RDMA_WRITE, "");
+void handleWriteCompletion(Device *device, struct ibv_wc wc) {
+    MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RDMA_WRITE, "Write completion failed! %d %d\n", wc.status, wc.opcode);
     SendCtx *ctx = (SendCtx*) wc.wr_id;
     int src_rank = device->qp2rank[wc.qp_num % device->qp2rank_mod];
     finMsg->recv_ctx = ctx->recv_ctx;
-    return postSendImm(device, src_rank, finMsg, sizeof(FINMsg),
-                       device->dev_mr->lkey, MSG_FIN, ctx);
+    delete ctx;
+    int ret = postSendImm(device, src_rank, finMsg, sizeof(FINMsg),
+                         device->dev_mr->lkey, MSG_FIN, NULL);
+    MLOG_Assert(ret == 0, "\n");
+}
+
+void handleFIN(struct ibv_wc wc) {
+    MLOG_Assert(wc.imm_data == MSG_FIN, "Recv FIN failed");
+    FINMsg *recvFINMsg = (FINMsg*) wc.wr_id;
+    RecvCtx *ctx = (RecvCtx*) recvFINMsg->recv_ctx;
+    delete ctx;
 }
 
 int run(Config config) {
-    ibv::Device device;
-    ibv::DeviceConfig deviceConfig;
+    Device device;
+    DeviceConfig deviceConfig;
     deviceConfig.mr_size = CACHE_LINE_SIZE * 4 + config.max_msg_size * 2;
-    ibv::init(NULL, &device, deviceConfig);
+    init(NULL, &device, deviceConfig);
     int rank = pmi_get_rank();
     int nranks = pmi_get_size();
     MLOG_Assert(nranks == 2, "This benchmark requires exactly two processes\n");
@@ -160,98 +181,68 @@ int run(Config config) {
     if (rank == 0) {
         RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, true, [&](int msg_size, int iter) {
             struct ibv_wc wc;
-            int ret;
             // post one rendezvous send
             if (config.touch_data) write_buffer((char*) send_buf, msg_size, value);
-            ret = postRTS(&device, 1-rank, send_buf, msg_size, device.dev_mr->lkey, NULL);
-            MLOG_Assert(ret == 0, "Post RTS failed!\n");
+            postRTS(&device, 1-rank, send_buf, msg_size, device.dev_mr->lkey, NULL);
             // wait for send to complete
-            wc = ibv::pollCQ(device.send_cq);
+            wc = pollCQ(device.send_cq);
             MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND, "Send RTS completion failed! %d %d\n", wc.status, wc.opcode);
             // wait for one recv to complete
-            wc = ibv::pollCQ(device.recv_cq);
-            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV, "Recv RTR completion failed!\n");
-            --device.posted_recv_num;
-            checkAndPostRecvs(&device, control_recv_buf, CACHE_LINE_SIZE, device.dev_mr->lkey, control_recv_buf);;
-            // handle RTR and post write
-            ret = handleRTR(&device, wc);
-            MLOG_Assert(ret == 0, "Handle RTR and post Write failed!\n");
+            wc = pollRecvCQ(&device);
+            handleRTR(&device, wc);
             // wait for write to complete
-            wc = ibv::pollCQ(device.send_cq);
-            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RDMA_WRITE, "Write completion failed! %d %d\n", wc.status, wc.opcode);
-            ret = handleWriteCompletion(&device, wc);
-            MLOG_Assert(ret == 0, "Handle Write Completion and post Fin failed!\n");
-            wc = ibv::pollCQ(device.send_cq);
+            wc = pollCQ(device.send_cq);
+            handleWriteCompletion(&device, wc);
+            // wait for FIN to complete
+            wc = pollCQ(device.send_cq);
             MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND, "Send FIN completion failed!\n");
 
             // receive a rendezvous recv
             // wait for RTS, post RTR
-            wc = ibv::pollCQ(device.recv_cq);
-            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV, "Recv RTS completion failed!\n");
-            --device.posted_recv_num;
-            checkAndPostRecvs(&device, control_recv_buf, CACHE_LINE_SIZE, device.dev_mr->lkey, control_recv_buf);;
-            ret = handleRTS(&device, wc, recv_buf, msg_size, device.dev_mr->lkey, NULL);
-            MLOG_Assert(ret == 0, "Handle RTS and Send RTR failed!\n");
+            wc = pollRecvCQ(&device);
+            handleRTS(&device, wc, recv_buf, msg_size, device.dev_mr->lkey, NULL);
             // wait for send to complete
-            wc = ibv::pollCQ(device.send_cq);
+            wc = pollCQ(device.send_cq);
             MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND, "Send RTR completion failed! %d %d\n", wc.status, wc.opcode);
             // wait for FIN, check buffer
-            wc = ibv::pollCQ(device.recv_cq);
-            MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV, "Recv FIN completion failed!\n");
-            --device.posted_recv_num;
-            checkAndPostRecvs(&device, control_recv_buf, CACHE_LINE_SIZE, device.dev_mr->lkey, control_recv_buf);;
-            MLOG_Assert(wc.imm_data == MSG_FIN, "Recv FIN failed");
+            wc = pollRecvCQ(&device);
+            handleFIN(wc);
             if (config.touch_data) check_buffer((char*) recv_buf, msg_size, peer_value);
         });
     } else {
         RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, false, [&](int msg_size, int iter) {
           struct ibv_wc wc;
-          int ret;
           // receive a rendezvous recv
           // wait for RTS, post RTR
-          wc = ibv::pollCQ(device.recv_cq);
-          MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV, "Recv RTS completion failed!\n");
-          --device.posted_recv_num;
-          ibv::checkAndPostRecvs(&device, control_recv_buf, CACHE_LINE_SIZE, device.dev_mr->lkey, control_recv_buf);;
-          ret = handleRTS(&device, wc, recv_buf, msg_size, device.dev_mr->lkey, NULL);
-          MLOG_Assert(ret == 0, "Handle RTS and Send RTR failed!\n");
+          wc = pollRecvCQ(&device);
+          handleRTS(&device, wc, recv_buf, msg_size, device.dev_mr->lkey, NULL);
           // wait for send to complete
-          wc = ibv::pollCQ(device.send_cq);
+          wc = pollCQ(device.send_cq);
           MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND, "Send RTR completion failed! %d %d\n", wc.status, wc.opcode);
           // wait for FIN, check buffer
-          wc = ibv::pollCQ(device.recv_cq);
-          MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV, "Recv FIN completion failed!\n");
-          --device.posted_recv_num;
-          checkAndPostRecvs(&device, control_recv_buf, CACHE_LINE_SIZE, device.dev_mr->lkey, control_recv_buf);;
-          MLOG_Assert(wc.imm_data == MSG_FIN, "Recv FIN failed");
+          wc = pollRecvCQ(&device);
+          handleFIN(wc);
           if (config.touch_data) check_buffer((char*) recv_buf, msg_size, peer_value);
 
           // post one rendezvous send
           if (config.touch_data) write_buffer((char*) send_buf, msg_size, value);
-          ret = postRTS(&device, 1-rank, send_buf, msg_size, device.dev_mr->lkey, NULL);
-          MLOG_Assert(ret == 0, "Post RTS failed!\n");
+          postRTS(&device, 1-rank, send_buf, msg_size, device.dev_mr->lkey, NULL);
           // wait for send to complete
-          wc = ibv::pollCQ(device.send_cq);
+          wc = pollCQ(device.send_cq);
           MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND, "Send RTS completion failed! %d %d\n", wc.status, wc.opcode);
           // wait for one recv to complete
-          wc = ibv::pollCQ(device.recv_cq);
-          MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV, "Recv RTR completion failed!\n");
-          --device.posted_recv_num;
-          checkAndPostRecvs(&device, control_recv_buf, CACHE_LINE_SIZE, device.dev_mr->lkey, control_recv_buf);;
-          // handle RTR and post write
-          ret = handleRTR(&device, wc);
-          MLOG_Assert(ret == 0, "Handle RTR and post Write failed!\n");
+          wc = pollRecvCQ(&device);
+          handleRTR(&device, wc);
           // wait for write to complete
-          wc = ibv::pollCQ(device.send_cq);
-          MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RDMA_WRITE, "Write completion failed! %d %d\n", wc.status, wc.opcode);
-          ret = handleWriteCompletion(&device, wc);
-          MLOG_Assert(ret == 0, "Handle Write Completion and post Fin failed!\n");
-          wc = ibv::pollCQ(device.send_cq);
+          wc = pollCQ(device.send_cq);
+          handleWriteCompletion(&device, wc);
+          // wait for FIN to complete
+          wc = pollCQ(device.send_cq);
           MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND, "Send FIN completion failed!\n");
         });
     }
 
-    ibv::finalize(&device);
+    finalize(&device);
     return 0;
 }
 
