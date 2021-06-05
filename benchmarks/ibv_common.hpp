@@ -483,6 +483,8 @@ inline int postWrite(Device *device, int rank, void *buf, uint32_t size, uint32_
 inline int postWriteImm(Device *device, int rank, void *buf, uint32_t size, uint32_t lkey,
                  uintptr_t remote_addr, uint32_t rkey, uint32_t data, void *user_context)
 {
+    MLOG_DBG_Log(MLOG_LOG_DEBUG, "postWriteImm: %d %p %u %u %p %u %u %p\n", rank, buf,
+                 size, lkey, (void*) remote_addr, rkey, data, user_context);
     struct ibv_sge list;
     list.addr	= (uint64_t) buf;
     list.length = size;

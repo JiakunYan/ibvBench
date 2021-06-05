@@ -41,7 +41,7 @@ Config parseArgs(int argc, char **argv) {
 struct SendCtx {
     void *buf;
     uint32_t size;
-    uint32_t lkey;
+    ibv_mr *mr;
     void *user_context;
     uintptr_t recv_ctx; // 8 bytes
 };
@@ -49,6 +49,7 @@ struct SendCtx {
 struct RecvCtx {
     void *buf;
     uint32_t size;
+    ibv_mr *mr;
     void *user_context;
 };
 
@@ -91,7 +92,7 @@ void postRTS(Device *device, int rank, void *buf, uint32_t size, struct ibv_mr *
     SendCtx *ctx = (SendCtx*) malloc(sizeof(SendCtx));
     ctx->buf = buf;
     ctx->size = size;
-    ctx->lkey = mr->rkey;
+    ctx->mr = mr;
     ctx->user_context = user_context;
     rtsMsg->send_ctx = (uintptr_t) ctx;
     rtsMsg->size = size;
@@ -102,11 +103,12 @@ void postRTS(Device *device, int rank, void *buf, uint32_t size, struct ibv_mr *
 void handleRTS(Device *device, struct ibv_wc wc, void *buf, uint32_t size, struct ibv_mr *mr, void *user_context) {
     MLOG_Assert(wc.opcode == IBV_WC_RECV && wc.imm_data == MSG_RTS, "");
     RTSMsg *recvRTSMsg = (RTSMsg*) wc.wr_id;
+    MLOG_Assert(recvRTSMsg->size <= size, "");
     int src_rank = device->qp2rank[wc.qp_num % device->qp2rank_mod];
     RecvCtx *ctx = (RecvCtx*) malloc(sizeof(RecvCtx));
-    MLOG_Assert(recvRTSMsg->size <= size, "");
     ctx->size = size;
     ctx->buf = buf;
+    ctx->mr = mr;
     ctx->user_context = user_context;
     rtrMsg->send_ctx = recvRTSMsg->send_ctx;
     rtrMsg->recv_ctx = (uintptr_t) ctx;
@@ -123,7 +125,7 @@ void handleRTR(Device *device, struct ibv_wc wc) {
     int src_rank = device->qp2rank[wc.qp_num % device->qp2rank_mod];
     SendCtx *ctx = (SendCtx*)recvRTRMsg->send_ctx;
     ctx->recv_ctx = recvRTRMsg->recv_ctx;
-    int ret = postWrite(device, src_rank, ctx->buf, ctx->size, ctx->lkey,
+    int ret = postWrite(device, src_rank, ctx->buf, ctx->size, ctx->mr->lkey,
                         recvRTRMsg->remote_addr, recvRTRMsg->rkey, ctx);
 
     MLOG_Assert(ret == 0, "\n");

@@ -24,6 +24,8 @@ echo "srun -n 2 ibv_pingpong_read -t 1"
 srun -n 2 --mpi=pmi2 ${path_to_exe}/ibv_pingpong_read -t 1 --max-msg-size 4194304
 echo "srun -n 2 ibv_pingpong_rdv_write -t 1"
 srun -n 2 --mpi=pmi2 ${path_to_exe}/rendezvous/ibv_pingpong_rdv_write -t 1 --max-msg-size 4194304
+echo "srun -n 2 ibv_pingpong_rdv_write_imm -t 1"
+srun -n 2 --mpi=pmi2 ${path_to_exe}/rendezvous/ibv_pingpong_rdv_write_imm -t 1 --max-msg-size 4194304
 echo "srun -n 2 ibv_pingpong_rdv_read -t 1"
 srun -n 2 --mpi=pmi2 ${path_to_exe}/rendezvous/ibv_pingpong_rdv_read -t 1 --max-msg-size 4194304
 
@@ -41,5 +43,7 @@ echo "srun -n 2 ibv_pingpong_read -t 0"
 srun -n 2 --mpi=pmi2 ${path_to_exe}/ibv_pingpong_read -t 0 --max-msg-size 4194304
 echo "srun -n 2 ibv_pingpong_rdv_write -t 0"
 srun -n 2 --mpi=pmi2 ${path_to_exe}/rendezvous/ibv_pingpong_rdv_write -t 0 --max-msg-size 4194304
+echo "srun -n 2 ibv_pingpong_rdv_write_imm -t 0"
+srun -n 2 --mpi=pmi2 ${path_to_exe}/rendezvous/ibv_pingpong_rdv_write_imm -t 0 --max-msg-size 4194304
 echo "srun -n 2 ibv_pingpong_rdv_read -t 0"
 srun -n 2 --mpi=pmi2 ${path_to_exe}/rendezvous/ibv_pingpong_rdv_read -t 0 --max-msg-size 4194304

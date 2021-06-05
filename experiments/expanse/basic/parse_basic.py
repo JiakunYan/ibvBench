@@ -7,8 +7,8 @@ import os,sys
 sys.path.append("../../include")
 from draw_simple import *
 
-name = "inline_size"
-input_path = "run/slurm_output.inline_size-*"
+name = "basic"
+input_path = "run/slurm_output.basic-*"
 output_path = "draw/"
 edge_srun = {
     "format": "srun -n 2 (.+)",
@@ -63,24 +63,5 @@ if __name__ == "__main__":
         exit(1)
     else:
         print("get {} entries".format(df.shape[0]))
+    df["Size(B)"] = np.log2(df["Size(B)"].astype(np.float32)).astype(np.int)
     df.to_csv(os.path.join(output_path, "{}.csv".format(name)))
-
-    draw_cofig = {
-        "name": "latency-inline",
-        "x_key": "Size(B)",
-        "y_key": "latency(us)",
-        "tag_key": "task",
-        "output": "draw/"
-    }
-    draw_tag(draw_cofig, df)
-
-    df_focus = df[df.apply(lambda row: "-t 1" in row["task"] and
-                                row["Size(B)"] <= 512, axis=1)]
-    draw_cofig = {
-        "name": "focus-inline",
-        "x_key": "Size(B)",
-        "y_key": "latency(us)",
-        "tag_key": "task",
-        "output": "draw/"
-    }
-    draw_tag(draw_cofig, df_focus)
