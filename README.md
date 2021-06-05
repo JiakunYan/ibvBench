@@ -1,6 +1,6 @@
 # ibvBench
 
-This is a benchmark project for Infiniband.
+This is a benchmark suite for Infiniband.
 
 Author: Jiakun Yan (jiakuny3@illinois.edu)
 
@@ -13,8 +13,13 @@ Author: Jiakun Yan (jiakuny3@illinois.edu)
 - benchmarks: The actual benchmarks. Currently, they are:
     - mpi_pingpong: pingpong benchmark for MPI Send/Recv
     - ibv_pingpong_sendrecv: pingpong benchmark for IB channel semantic.
-    - ibv_pingpong_write: pingpong benchmark for IB RDMA write.
-    - ibv_pingpong_write: pingpong benchmark for IB RDMA write with immediate data.
+    - ibv_pingpong_write: pingpong benchmark for RDMA Write (IBV_WR_RDMA_WRITE).
+    - ibv_pingpong_write_imm: pingpong benchmark for signaled RDMA Write (IBV_WR_RDMA_WRITE_WITH_IMM).
+    - ibv_pingpong_read: pingpong benchmark for RDMA Read (IBV_WR_RDMA_READ).
+    - rendezvous: implementation of rendezvous protocols for sending long messages. It contains:
+        - ibv_pingpong_rdv_write: four-step rendezvous protocol using RDMA Write (IBV_WR_RDMA_WRITE).
+        - ibv_pingpong_rdv_write_imm: three-step rendezvous protocol using signaled RDMA Write (IBV_WR_RDMA_WRITE_WITH_IMM).
+        - ibv_pingpong_rdv_read: three-step rendezvous protocol using RDMA Read (IBV_WR_RDMA_READ).
 - rdma-core: benchmark examples, borrowed from the `rdma-core` project (https://github.com/linux-rdma/rdma-core).
 - experiments: contains some useful scripts to run benchmarks on various platform.
     Currently, we have set up the scripts for
