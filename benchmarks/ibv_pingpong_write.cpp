@@ -78,7 +78,7 @@ int run(Config config) {
             MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RDMA_WRITE, "Send completion failed!");
 
             // wait for remote write to complete
-            while (!(buf[msg_size-1] == 'b' && buf[0] == 'b')) continue;
+            while (!(buf[msg_size-1] == peer_value && buf[0] == peer_value)) continue;
             if (config.touch_data) check_buffer((char*) device.mr_addr, msg_size, peer_value);
         });
     } else {
@@ -86,8 +86,7 @@ int run(Config config) {
             int ne;
             struct ibv_wc wc;
             // wait for remote write to complete
-            volatile char *buf = (char*) device.mr_addr;
-            while (!(buf[msg_size-1] == 'a' && buf[0] == 'a')) continue;
+            while (!(buf[msg_size-1] == peer_value && buf[0] == peer_value)) continue;
             if (config.touch_data) check_buffer((char*) device.mr_addr, msg_size, peer_value);
 
             // post one write
