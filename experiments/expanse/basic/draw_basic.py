@@ -15,19 +15,19 @@ def interactive(df):
              'ibv_pingpong_sendrecv -t 1',
              'ibv_pingpong_write -t 1',
              'ibv_pingpong_write_imm -t 1',
-             # 'ibv_pingpong_read -t 1',
+             'ibv_pingpong_read -t 1',
              'ibv_pingpong_rdv_write -t 1',
              'ibv_pingpong_rdv_write_imm -t 1',
              'ibv_pingpong_rdv_read -t 1',
-             # 'mpi_pingpong -t 0',
-             # 'mpi_pingpong -t 0 UCX_TLS=rc_v',
-             # 'ibv_pingpong_sendrecv -t 0',
-             # 'ibv_pingpong_write -t 0',
-             # 'ibv_pingpong_write_imm -t 0',
-             # 'ibv_pingpong_read -t 0',
-             # 'ibv_pingpong_rdv_write -t 0',
-             # 'ibv_pingpong_rdv_write_imm -t 0',
-             # 'ibv_pingpong_rdv_read -t 0',
+             'mpi_pingpong -t 0',
+             'mpi_pingpong -t 0 UCX_TLS=rc_v',
+             'ibv_pingpong_sendrecv -t 0',
+             'ibv_pingpong_write -t 0',
+             'ibv_pingpong_write_imm -t 0',
+             'ibv_pingpong_read -t 0',
+             'ibv_pingpong_rdv_write -t 0',
+             'ibv_pingpong_rdv_write_imm -t 0',
+             'ibv_pingpong_rdv_read -t 0',
              ]
 
     df1 = df[df.apply(lambda row:
@@ -40,6 +40,8 @@ def interactive(df):
     tag_key = "task"
     lines = parse_tag(df1, x_key, y_key, tag_key)
     for line in lines:
+        # if line["label"] == "ibv_pingpong_read -t 0":
+        #     line["y"] = list(map(lambda y: y*2, line["y"]))
         print(line)
         plt.errorbar(line["x"], line["y"], line["error"], label=line['label'], marker='.', markerfacecolor='white', capsize=3)
     plt.xlabel(x_key)
@@ -96,4 +98,4 @@ def batch(df):
 
 if __name__ == "__main__":
     df = pd.read_csv(os.path.join(input_path, name + ".csv"))
-    batch(df)
+    interactive(df)

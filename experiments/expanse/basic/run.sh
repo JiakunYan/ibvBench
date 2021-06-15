@@ -20,6 +20,7 @@ fi
 mkdir_s ./run
 
 module load python
+module load papi
 
 for i in $(eval echo {1..${1:-1}}); do
   cd run

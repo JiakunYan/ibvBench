@@ -110,7 +110,9 @@ int run(Config config) {
 }
 
 int main(int argc, char **argv) {
+    init(false);
     Config config = parseArgs(argc, argv);
     run(config);
+    finalize();
     return 0;
 }
