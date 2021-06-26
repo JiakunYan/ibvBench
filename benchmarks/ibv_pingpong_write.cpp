@@ -47,30 +47,31 @@ int run(Config config) {
     ibv::Device device;
     ibv::DeviceConfig deviceConfig;
     deviceConfig.inline_size = config.inline_size;
-    deviceConfig.mr_size = config.max_msg_size;
+    deviceConfig.mr_size = config.max_msg_size * 2;
     ibv::init(NULL, &device, deviceConfig);
     int rank = lcm_pm_get_rank();
     int nranks = lcm_pm_get_size();
     MLOG_Assert(nranks == 2, "This benchmark requires exactly two processes\n");
     char value = 'a' + rank;
     char peer_value = 'a' + 1 - rank;
-    volatile char *buf = (char*) device.mr_addr;
-    memset(device.mr_addr, 0, config.max_msg_size);
+    void *send_buf = (char*) device.mr_addr;
+    void *recv_buf = (char*) device.mr_addr + config.max_msg_size;
+    uintptr_t remote_recv_buf = (uintptr_t) device.rmrs[1-rank].addr + config.max_msg_size;
+    volatile char *buf = (char*) recv_buf;
+    memset(send_buf, value, config.max_msg_size);
+    memset(recv_buf, 0, config.max_msg_size);
     lcm_pm_barrier();
-    ibv::checkAndPostRecvs(&device, device.mr_addr, device.mr_size, device.dev_mr->lkey, device.mr_addr);
+    ibv::checkAndPostRecvs(&device, recv_buf, config.max_msg_size, device.dev_mr->lkey, recv_buf);
 
     if (rank == 0) {
         RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, true, [&](int msg_size, int iter) {
             struct ibv_wc wc;
+            buf[0] = value;
+            buf[msg_size - 1] = value;
             // post one write
-            if (config.touch_data) {
-                write_buffer((char*) device.mr_addr, msg_size, value);
-            } else {
-                buf[0] = value;
-                buf[msg_size - 1] = value;
-            }
-            int ret = ibv::postWrite(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->lkey,
-                                     device.rmrs[1-rank].addr, device.rmrs[1-rank].rkey, NULL);
+            if (config.touch_data) write_buffer((char*) send_buf, msg_size, value);
+            int ret = ibv::postWrite(&device, 1-rank, send_buf, msg_size, device.dev_mr->lkey,
+                                     remote_recv_buf, device.rmrs[1-rank].rkey, NULL);
             MLOG_Assert(ret == 0, "Post Write failed!");
 
             // wait for write to complete
@@ -79,7 +80,7 @@ int run(Config config) {
 
             // wait for remote write to complete
             while (!(buf[msg_size-1] == peer_value && buf[0] == peer_value)) continue;
-            if (config.touch_data) check_buffer((char*) device.mr_addr, msg_size, peer_value);
+            if (config.touch_data) check_buffer((char*) recv_buf, msg_size, peer_value);
         });
     } else {
         RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, false, [&](int msg_size, int iter) {
@@ -87,17 +88,14 @@ int run(Config config) {
             struct ibv_wc wc;
             // wait for remote write to complete
             while (!(buf[msg_size-1] == peer_value && buf[0] == peer_value)) continue;
-            if (config.touch_data) check_buffer((char*) device.mr_addr, msg_size, peer_value);
+            if (config.touch_data) check_buffer((char*) recv_buf, msg_size, peer_value);
 
             // post one write
-            if (config.touch_data) {
-                write_buffer((char*) device.mr_addr, msg_size, value);
-            } else {
-                buf[0] = value;
-                buf[msg_size - 1] = value;
-            }
-            int ret = ibv::postWrite(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->lkey,
-                                   device.rmrs[1-rank].addr, device.rmrs[1-rank].rkey, NULL);
+            buf[0] = value;
+            buf[msg_size - 1] = value;
+            if (config.touch_data) write_buffer((char*) send_buf, msg_size, value);
+            int ret = ibv::postWrite(&device, 1-rank, send_buf, msg_size, device.dev_mr->lkey,
+                                   remote_recv_buf, device.rmrs[1-rank].rkey, NULL);
             MLOG_Assert(ret == 0, "Post Write failed!");
 
             // wait for write to complete

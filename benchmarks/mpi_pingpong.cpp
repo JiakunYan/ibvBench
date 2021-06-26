@@ -57,30 +57,29 @@ void run(const Config &config) {
     MLOG_Assert(nranks == 2, "This benchmark requires exactly two processes\n");
     char value = 'a' + rank;
     char peer_value = 'a' + 1 - rank;
-    char *buf;
+    char *send_buf;
+    char *recv_buf;
     const int PAGE_SIZE = sysconf(_SC_PAGESIZE);
-    posix_memalign((void **)&buf, PAGE_SIZE, config.max_msg_size);
-    if (!buf) {
-        fprintf(stderr, "Unable to allocate memory\n");
-        exit(EXIT_FAILURE);
-    }
+    posix_memalign((void **)&send_buf, PAGE_SIZE, config.max_msg_size);
+    posix_memalign((void **)&recv_buf, PAGE_SIZE, config.max_msg_size);
 
     if (rank == 0) {
         RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, true, [&](int msg_size, int iter) {
-          if (config.touch_data) write_buffer((char*) buf, msg_size, value);
-          MPI_CHECK(MPI_Send(buf, msg_size, MPI_CHAR, 1 - rank, 1, MPI_COMM_WORLD));
-          MPI_CHECK(MPI_Recv(buf, msg_size, MPI_CHAR, 1 - rank, 1, MPI_COMM_WORLD, NULL));
-          if (config.touch_data) check_buffer((char*) buf, msg_size, peer_value);
+          if (config.touch_data) write_buffer((char*) send_buf, msg_size, value);
+          MPI_CHECK(MPI_Send(send_buf, msg_size, MPI_CHAR, 1 - rank, 1, MPI_COMM_WORLD));
+          MPI_CHECK(MPI_Recv(recv_buf, msg_size, MPI_CHAR, 1 - rank, 1, MPI_COMM_WORLD, NULL));
+          if (config.touch_data) check_buffer((char*) recv_buf, msg_size, peer_value);
         });
     } else {
         RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, false, [&](int msg_size, int iter) {
-          MPI_CHECK(MPI_Recv(buf, msg_size, MPI_CHAR, 1 - rank, 1, MPI_COMM_WORLD, NULL));
-          if (config.touch_data) check_buffer((char*) buf, msg_size, peer_value);
-          if (config.touch_data) write_buffer((char*) buf, msg_size, value);
-          MPI_CHECK(MPI_Send(buf, msg_size, MPI_CHAR, 1 - rank, 1, MPI_COMM_WORLD));
+          MPI_CHECK(MPI_Recv(send_buf, msg_size, MPI_CHAR, 1 - rank, 1, MPI_COMM_WORLD, NULL));
+          if (config.touch_data) check_buffer((char*) send_buf, msg_size, peer_value);
+          if (config.touch_data) write_buffer((char*) recv_buf, msg_size, value);
+          MPI_CHECK(MPI_Send(recv_buf, msg_size, MPI_CHAR, 1 - rank, 1, MPI_COMM_WORLD));
         });
     }
-    free(buf);
+    free(send_buf);
+    free(recv_buf);
     MPI_CHECK(MPI_Finalize());
 }
 

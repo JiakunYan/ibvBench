@@ -98,4 +98,5 @@ def batch(df):
 
 if __name__ == "__main__":
     df = pd.read_csv(os.path.join(input_path, name + ".csv"))
-    interactive(df)
+    # interactive(df)
+    batch(df)

@@ -47,21 +47,23 @@ int run(Config config) {
     ibv::Device device;
     ibv::DeviceConfig deviceConfig;
     deviceConfig.inline_size = config.inline_size;
-    deviceConfig.mr_size = config.max_msg_size;
+    deviceConfig.mr_size = config.max_msg_size * 2;
     ibv::init(NULL, &device, deviceConfig);
     int rank = lcm_pm_get_rank();
     int nranks = lcm_pm_get_size();
     MLOG_Assert(nranks == 2, "This benchmark requires exactly two processes\n");
     char value = 'a' + rank;
     char peer_value = 'a' + 1 - rank;
-    ibv::checkAndPostRecvs(&device, device.mr_addr, device.mr_size, device.dev_mr->lkey, device.mr_addr);
+    void *send_buf = (char*) device.mr_addr;
+    void *recv_buf = (char*) device.mr_addr + config.max_msg_size;
+    ibv::checkAndPostRecvs(&device, recv_buf, config.max_msg_size, device.dev_mr->lkey, recv_buf);
 
     if (rank == 0) {
         RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, true, [&](int msg_size, int iter) {
             struct ibv_wc wc;
             // post one send
-            if (config.touch_data) write_buffer((char*) device.mr_addr, msg_size, value);
-            int ret = ibv::postSend(&device, 1-rank, device.mr_addr, msg_size, device.dev_mr->lkey, NULL);
+            if (config.touch_data) write_buffer((char*) send_buf, msg_size, value);
+            int ret = ibv::postSend(&device, 1-rank, send_buf, msg_size, device.dev_mr->lkey, NULL);
             MLOG_Assert(ret == 0, "Post Send failed!");
 
             // wait for send to complete
@@ -73,8 +75,8 @@ int run(Config config) {
             MLOG_Assert(wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV, "Recv completion failed!");
             // optionally post recv buffers
             --device.posted_recv_num;
-            ibv::checkAndPostRecvs(&device, device.mr_addr, device.mr_size, device.dev_mr->lkey, device.mr_addr);
-            if (config.touch_data) check_buffer((char*) device.mr_addr, msg_size, peer_value);
+            ibv::checkAndPostRecvs(&device, recv_buf, config.max_msg_size, device.dev_mr->lkey, recv_buf);
+            if (config.touch_data) check_buffer((char*) recv_buf, msg_size, peer_value);
         });
     } else {
         RUN_VARY_MSG({config.min_msg_size, config.max_msg_size}, false, [&](int msg_size, int iter) {
@@ -86,12 +88,12 @@ int run(Config config) {
                         "Recv completion failed!");
             // optionally post recv buffers
             --device.posted_recv_num;
-            ibv::checkAndPostRecvs(&device, device.mr_addr, device.mr_size, device.dev_mr->lkey, device.mr_addr);
-            if (config.touch_data) check_buffer((char*) device.mr_addr, msg_size, peer_value);
+            ibv::checkAndPostRecvs(&device, recv_buf, config.max_msg_size, device.dev_mr->lkey, recv_buf);
+            if (config.touch_data) check_buffer((char*) recv_buf, msg_size, peer_value);
 
             // post one send
-            if (config.touch_data) write_buffer((char*) device.mr_addr, msg_size, value);
-            int ret = ibv::postSend(&device, 1 - rank, device.mr_addr, msg_size,
+            if (config.touch_data) write_buffer((char*) send_buf, msg_size, value);
+            int ret = ibv::postSend(&device, 1 - rank, send_buf, msg_size,
                           device.dev_mr->lkey, NULL);
             MLOG_Assert(ret == 0, "Post Send failed!");
 
