@@ -49,8 +49,8 @@ int run(Config config) {
     deviceConfig.inline_size = config.inline_size;
     deviceConfig.mr_size = config.max_msg_size;
     ibv::init(NULL, &device, deviceConfig);
-    int rank = pmi_get_rank();
-    int nranks = pmi_get_size();
+    int rank = lcm_pm_get_rank();
+    int nranks = lcm_pm_get_size();
     MLOG_Assert(nranks == 2, "This benchmark requires exactly two processes\n");
     char value = 'a' + rank;
     char peer_value = 'a' + 1 - rank;

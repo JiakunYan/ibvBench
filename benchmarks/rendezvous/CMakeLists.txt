@@ -1,6 +1,6 @@
 include_directories(..)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/..)
-link_libraries(mlog-lib pmi-lib)
+link_libraries(mlog-lib pmi_shared)
 add_ibv_benchmark(ibv_pingpong_rdv_write ibv_pingpong_rdv_write.cpp)
 add_ibv_benchmark(ibv_pingpong_rdv_write_imm ibv_pingpong_rdv_write_imm.cpp)
 add_ibv_benchmark(ibv_pingpong_rdv_read ibv_pingpong_rdv_read.cpp)

@@ -21,7 +21,7 @@
 
 #include "simple_pmiutil.h"
 
-/* Use the memory definitions from mpich/benchmarks/include */
+/* Use the memory definitions from mpich/src/include */
 
 #define MAXVALLEN 1024
 #define MAXKEYLEN   32
@@ -112,7 +112,7 @@ int PMIU_readline( int fd, char *buf, int maxlen )
   /* Note: On the client side, only one thread at a time should
      be calling this, and there should only be a single fd.
      Server side code should not use this routine (see the
-     replacement version in benchmarks/pm/util/pmiserv.c) */
+     replacement version in src/pm/util/pmiserv.c) */
   if (nextChar != lastChar && fd != lastfd) {
     // internal_error_printf( "Panic - buffer inconsistent\n" );
     return -1;
@@ -348,12 +348,12 @@ int MPIU_Strncpy( char *dest, const char *src, size_t n )
 	dest[n-1] = 0;
 	/* We may want to force an error message here, at least in the
 	   debugging version */
-	/*printf( "failure in copying %s with length %d\n", benchmarks, n ); */
+	/*printf( "failure in copying %s with length %d\n", src, n ); */
 	return 1;
     }
 }
 
-/* Append benchmarks to dest, but only allow dest to contain n characters (including
+/* Append src to dest, but only allow dest to contain n characters (including
    any null, which is always added to the end of the line */
 /*@ MPIU_Strnapp - Append to a string with a maximum length
 

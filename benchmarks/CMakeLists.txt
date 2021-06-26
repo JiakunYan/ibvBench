@@ -10,7 +10,7 @@ function(add_ibv_benchmark EXEC)
 endfunction()
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
-link_libraries(mlog-lib pmi-lib)
+link_libraries(mlog-lib pmi_shared)
 add_ibv_benchmark(ibv_pingpong_sendrecv ibv_pingpong_sendrecv.cpp)
 add_ibv_benchmark(ibv_pingpong_write ibv_pingpong_write.cpp)
 add_ibv_benchmark(ibv_pingpong_write_imm ibv_pingpong_write_imm.cpp)

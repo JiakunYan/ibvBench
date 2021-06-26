@@ -218,7 +218,7 @@ typedef struct PMI2_Connect_comm {
   This particular form of linked list (in particular, with this particular
   choice of the first two members) is used because it allows us to use
   the same routines to manage this list as are used to manage the
-  list of free objects (in the file 'benchmarks/util/mem/handlemem.c').  In
+  list of free objects (in the file 'src/util/mem/handlemem.c').  In
   particular, if lock-free routines for updating a linked list are
   provided, they can be used for managing the 'MPID_Info' structure as well.
 

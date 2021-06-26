@@ -18,6 +18,8 @@ if(NOT TARGET Papi::papi)
                 ${PC_PAPI_INCLUDEDIR}
                 ${PC_PAPI_INCLUDE_DIRS}
                 ENV PAPIHOME
+                ENV C_INCLUDE_PATH
+                ENV CPLUS_INCLUDE_PATH
           PATH_SUFFIXES include
   )
 
@@ -29,6 +31,7 @@ if(NOT TARGET Papi::papi)
                 ${PC_PAPI_LIBDIR}
                 ${PC_PAPI_LIBRARY_DIRS}
                 ENV PAPIHOME
+                ENV LD_LIBRARY_PATH
           PATH_SUFFIXES lib lib64
   )
 

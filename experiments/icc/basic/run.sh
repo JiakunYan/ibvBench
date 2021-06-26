@@ -19,9 +19,11 @@ fi
 # create the ./run directory
 mkdir_s ./run
 
+module load openmpi
 module load python
+module load papi
 
-for i in $(eval echo {1..${1:-7}}); do
+for i in $(eval echo {1..${1:-1}}); do
   cd run
   sbatch ${sbatch_path}/${task} ${exe_path} || { echo "sbatch error!"; exit 1; }
   cd ../

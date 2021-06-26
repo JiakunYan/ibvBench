@@ -123,8 +123,10 @@ int handleReadCompletion(Device *device, struct ibv_wc wc) {
 
 void handleFIN(struct ibv_wc wc) {
     MLOG_Assert(wc.imm_data == MSG_FIN, "Recv FIN failed");
-    FINMsg *recvFINMsg = (FINMsg*) wc.wr_id;
-    SendCtx *ctx = (SendCtx*) recvFINMsg->send_ctx;
+    // we cannot do this because the next RTS message might have overwritten the buffer
+//    FINMsg *recvFINMsg = (FINMsg*) wc.wr_id;
+//    SendCtx *ctx = (SendCtx*) recvFINMsg->send_ctx;
+    SendCtx *ctx = (SendCtx*) rtsMsg->send_ctx;
     delete ctx;
 }
 
@@ -133,8 +135,8 @@ int run(Config config) {
     ibv::DeviceConfig deviceConfig;
     deviceConfig.mr_size = CACHE_LINE_SIZE * 3 + config.max_msg_size * 2;
     ibv::init(NULL, &device, deviceConfig);
-    int rank = pmi_get_rank();
-    int nranks = pmi_get_size();
+    int rank = lcm_pm_get_rank();
+    int nranks = lcm_pm_get_size();
     MLOG_Assert(nranks == 2, "This benchmark requires exactly two processes\n");
     char value = 'a' + rank;
     char peer_value = 'a' + 1 - rank;

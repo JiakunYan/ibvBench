@@ -43,14 +43,14 @@ int run(Config config) {
     ibv::DeviceConfig deviceConfig;
     deviceConfig.mr_size = config.max_msg_size;
     ibv::init(NULL, &device, deviceConfig);
-    int rank = pmi_get_rank();
-    int nranks = pmi_get_size();
+    int rank = lcm_pm_get_rank();
+    int nranks = lcm_pm_get_size();
     MLOG_Assert(nranks == 2, "This benchmark requires exactly two processes\n");
     char value = 'a' + rank;
     char peer_value = 'a' + 1 - rank;
     volatile char *buf = (char*) device.mr_addr;
     memset(device.mr_addr, 0, config.max_msg_size);
-    pmi_barrier();
+    lcm_pm_barrier();
     ibv::checkAndPostRecvs(&device, device.mr_addr, device.mr_size, device.dev_mr->lkey, device.mr_addr);
 
     if (rank == 0) {
@@ -91,7 +91,7 @@ int run(Config config) {
         ibv::checkAndPostRecvs(&device, device.mr_addr, device.mr_size, device.dev_mr->lkey, device.mr_addr);
     }
 
-    pmi_barrier();
+    lcm_pm_barrier();
     ibv::finalize(&device);
     return 0;
 }

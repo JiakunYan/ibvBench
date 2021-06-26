@@ -60,7 +60,7 @@ int PMI2U_readline(int fd, char *buf, int maxlen) {
     /* Note: On the client side, only one thread at a time should
      be calling this, and there should only be a single fd.
      Server side code should not use this routine (see the
-     replacement version in benchmarks/pm/util/pmiserv.c) */
+     replacement version in src/pm/util/pmiserv.c) */
     /*PMI2U_Assert(nextChar == lastChar || fd == lastfd);*/
 
     p = buf;
@@ -215,7 +215,7 @@ void PMI2U_chgval(const char *keystr, char *valstr) {
     }
 }
 
-/* This code is borrowed from mpich2-1.5/benchmarks/pm/util/safestr2.c.
+/* This code is borrowed from mpich2-1.5/src/pm/util/safestr2.c.
    The reason is to keep the save code logic around strncpy() as
    as in the original PMI2 implementation.
 
@@ -269,7 +269,7 @@ MPIU_Strncpy(char *dest, const char *src, size_t n)
 	    /* We may want to force an error message here, at least in the
 	       debugging version
 	    */
-	    /* printf( "failure in copying %s with length %d\n", benchmarks, n ); */
+	    /* printf( "failure in copying %s with length %d\n", src, n ); */
 	    return 1;
     }
 }

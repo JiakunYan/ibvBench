@@ -26,7 +26,6 @@ module load DefaultModules
 module load gcc
 module load openmpi
 module load cmake
-module load papi
 export CC=gcc
 export CXX=g++
 
@@ -43,7 +42,6 @@ echo "Running cmake..."
 IBVB_INSTALL_PATH=$(realpath "../install")
 cmake -DCMAKE_INSTALL_PREFIX=${IBVB_INSTALL_PATH} \
       -DCMAKE_BUILD_TYPE=Release \
-      -DUSE_PAPI=ON \
       -L \
       ${IBVB_SOURCE_PATH} | tee init-cmake.log 2>&1 || { echo "cmake error!"; exit 1; }
 cmake -LAH . >> init-cmake.log

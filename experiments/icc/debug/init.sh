@@ -41,7 +41,7 @@ cd build
 echo "Running cmake..."
 IBVB_INSTALL_PATH=$(realpath "../install")
 cmake -DCMAKE_INSTALL_PREFIX=${IBVB_INSTALL_PATH} \
-      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_BUILD_TYPE=Debug \
       -DUSE_PAPI=ON \
       -DLCM_PM_BACKEND=mpi \
       -L \

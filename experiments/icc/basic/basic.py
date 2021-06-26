@@ -1,86 +1,105 @@
-import re
-import glob
-import numpy as np
-import ast
 import pandas as pd
 import os,sys
+from matplotlib import pyplot as plt
 sys.path.append("../../include")
 from draw_simple import *
 
 name = "basic"
-input_path = "run/slurm_output.*"
-output_path = "draw/"
-edge_srun = {
-    "format": "srun -n 2 (.+)",
-    "label": ["task"],
-}
-edge_data = {
-    "format": "(\d+)\s+(\S+)\s+(\S+)\s+(\S+).+",
-    "label": ["Size(B)", "latency(us)", "throughput(Mmsg/s)", "bandwidth(MB/s)"]
-}
-all_labels = edge_srun["label"] + edge_data["label"]
+input_path = "draw/"
+all_labels = ["task", "Size(B)", "latency(us)", "throughput(Mmsg/s)", "bandwidth(MB/s)"]
 
-def get_typed_value(value):
-    if value == '-nan':
-        return np.nan
-    try:
-        typed_value = ast.literal_eval(value)
-    except:
-        typed_value = value
-    return typed_value
+def interactive(df):
+    tasks = [
+        'mpi_pingpong -t 1',
+        # 'mpi_pingpong -t 1 UCX_TLS=rc_v',
+        'ibv_pingpong_sendrecv -t 1',
+        'ibv_pingpong_write -t 1',
+        'ibv_pingpong_write_imm -t 1',
+        # 'ibv_pingpong_read -t 1',
+        'ibv_pingpong_rdv_write -t 1',
+        'ibv_pingpong_rdv_write_imm -t 1',
+        # 'ibv_pingpong_rdv_read -t 1',
+        # 'mpi_pingpong -t 0',
+        # 'mpi_pingpong -t 0 UCX_TLS=rc_v',
+        # 'ibv_pingpong_sendrecv -t 0',
+        # 'ibv_pingpong_write -t 0',
+        # 'ibv_pingpong_write_imm -t 0',
+        # 'ibv_pingpong_read -t 0',
+        # 'ibv_pingpong_rdv_write -t 0',
+        # 'ibv_pingpong_rdv_write_imm -t 0',
+        # 'ibv_pingpong_rdv_read -t 0',
+    ]
+
+    df1 = df[df.apply(lambda row:
+                      row["task"] in tasks and
+                      (row["Size(B)"] >= 10) and
+                      True,
+                      axis=1)]
+    x_key = "Size(B)"
+    y_key = "L3_TCM"
+    tag_key = "task"
+    lines = parse_tag(df1, x_key, y_key, tag_key)
+    for line in lines:
+        # if line["label"] == "ibv_pingpong_read -t 0":
+        #     line["y"] = list(map(lambda y: y*2, line["y"]))
+        print(line)
+        plt.errorbar(line["x"], line["y"], line["error"], label=line['label'], marker='.', markerfacecolor='white', capsize=3)
+    plt.xlabel(x_key)
+    plt.ylabel(y_key)
+    plt.legend()
+    plt.show()
+
+def plot(df, x_key, y_key, tag_key, title):
+    fig, ax = plt.subplots()
+    lines = parse_tag(df, x_key, y_key, tag_key)
+    for line in lines:
+        ax.errorbar(line["x"], line["y"], line["error"], label=line['label'], marker='.', markerfacecolor='white', capsize=3)
+    ax.set_xlabel(x_key)
+    ax.set_ylabel(y_key)
+    ax.set_title(title)
+    ax.legend()
+    output_png_name = os.path.join("draw", "{}.png".format(title))
+    fig.savefig(output_png_name)
+
+def batch(df):
+    df1 = df[df.apply(lambda row:
+                      "-t 0" in row["task"] and
+                      "ibv_pingpong_read" not in row["task"] and
+                      (row["Size(B)"] >= 10) and
+                      True,
+                      axis=1)]
+    plot(df1, "Size(B)", "bandwidth(MB/s)", "task", "bandwidth")
+
+    df1 = df[df.apply(lambda row:
+                      "-t 1" in row["task"] and
+                      "ibv_pingpong_read" not in row["task"] and
+                      (row["Size(B)"] >= 10) and
+                      True,
+                      axis=1)]
+    plot(df1, "Size(B)", "bandwidth(MB/s)", "task", "bandwidth (touch data)")
+    plot(df1, "Size(B)", "L1_TCM", "task", "L1_TCM")
+    plot(df1, "Size(B)", "L2_TCM", "task", "L2_TCM")
+    plot(df1, "Size(B)", "L3_TCM", "task", "L3_TCM")
+
+    df1 = df[df.apply(lambda row:
+                      "-t 0" in row["task"] and
+                      "ibv_pingpong_read" not in row["task"] and
+                      "rdv" not in row["task"] and
+                      (row["Size(B)"] < 10) and
+                      True,
+                      axis=1)]
+    plot(df1, "Size(B)", "latency(us)", "task", "latency")
+
+    df1 = df[df.apply(lambda row:
+                      "-t 1" in row["task"] and
+                      "ibv_pingpong_read" not in row["task"] and
+                      "rdv" not in row["task"] and
+                      (row["Size(B)"] < 10) and
+                      True,
+                      axis=1)]
+    plot(df1, "Size(B)", "latency(us)", "task", "latency (touch data)")
 
 if __name__ == "__main__":
-    filenames = glob.glob(input_path)
-    lines = []
-    for filename in filenames:
-        with open(filename) as f:
-            lines.extend(f.readlines())
-
-    df = pd.DataFrame(columns=all_labels)
-    state = "init"
-    current_entry = dict()
-    for line in lines:
-        line = line.strip()
-        m = re.match(edge_srun["format"], line)
-        if m:
-            current_entry = dict()
-            current_data = [get_typed_value(x) for x in m.groups()]
-            current_label = edge_srun["label"]
-            for label, data in zip(current_label, current_data):
-                current_entry[label] = data
-            continue
-
-        m = re.match(edge_data["format"], line)
-        if m:
-            current_data = [get_typed_value(x) for x in m.groups()]
-            current_label = edge_data["label"]
-            for label, data in zip(current_label, current_data):
-                current_entry[label] = data
-            df = df.append(current_entry, ignore_index=True, sort=True)
-            continue
-    if df.shape[0] == 0:
-        print("Error! Get 0 entries!")
-        exit(1)
-    else:
-        print("get {} entries".format(df.shape[0]))
-    df.to_csv(os.path.join(output_path, "{}.csv".format(name)))
-
-    draw_cofig = {
-        "name": "latency",
-        "input": "draw/basic.csv",
-        "x_key": "Size(B)",
-        "y_key": "latency(us)",
-        "tag_key": "task",
-        "output": "draw/"
-    }
-    draw_tag(draw_cofig)
-
-    draw_cofig = {
-        "name": "bandwidth",
-        "input": "draw/basic.csv",
-        "x_key": "Size(B)",
-        "y_key": "bandwidth(MB/s)",
-        "tag_key": "task",
-        "output": "draw/"
-    }
-    draw_tag(draw_cofig)
+    df = pd.read_csv(os.path.join(input_path, name + ".csv"))
+    interactive(df)
+    # batch(df)

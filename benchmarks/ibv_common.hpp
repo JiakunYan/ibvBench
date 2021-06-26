@@ -73,9 +73,9 @@ int postRecv(Device *device, void *buf, uint32_t size, uint32_t lkey, void *user
 
 void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
     MLOG_Init();
-    pmi_master_init();
-    int rank = pmi_get_rank();
-    int nranks = pmi_get_size();
+    lcm_pm_initialize();
+    int rank = lcm_pm_get_rank();
+    int nranks = lcm_pm_get_size();
     device->config = config;
 
     int num_devices;
@@ -259,21 +259,26 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
 //            }
 //        }
         // Use this queue pair "i" to connect to rank e.
+        char key[256];
+        sprintf(key, "ibvBench_%d_%d", rank, i);
         char ep_name[256];
         sprintf(ep_name, "%lx:%x:%x:%hx",
                 (uintptr_t) device->mr_addr,
                 device->dev_mr->rkey, device->qps[i]->qp_num,
                 device->port_attr.lid);
-        pmi_publish(rank, i, ep_name);
+        lcm_pm_publish(key, ep_name);
     }
+    lcm_pm_barrier();
 
     for (int i = 0; i < nranks; i++) {
+        char key[256];
+        sprintf(key, "ibvBench_%d_%d", i, rank);
         char ep_name[256];
         uintptr_t dest_addr;
         uint32_t dest_rkey;
         uint32_t dest_qpn;
         uint16_t dest_lid;
-        pmi_getname(i, rank, ep_name);
+        lcm_pm_getname(key, ep_name);
         sscanf(ep_name, "%lx:%x:%x:%hx", &dest_addr,
                &dest_rkey, &dest_qpn, &dest_lid);
         // Once a queue pair (QP) has receive buffers posted to it, it is now
@@ -360,13 +365,13 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
     device->qp2rank = b;
     MLOG_Log(MLOG_LOG_INFO, "qp2rank_mod is %d\n", j);
 
-    pmi_barrier();
+    lcm_pm_barrier();
 }
 
 void finalize(Device *device) {
 //    ibv_close_device(device->dev_ctx);
 //    ibv_free_device_list(device->dev_list);
-    pmi_finalize();
+    lcm_pm_finalize();
 }
 
 inline struct ibv_wc pollCQ(struct ibv_cq *cq) {
