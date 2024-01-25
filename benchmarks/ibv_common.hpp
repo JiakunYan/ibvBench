@@ -86,8 +86,8 @@ void init(char *devname, Device *device, DeviceConfig config = DeviceConfig{}) {
     }
 
     if (!devname) {
-        // Use the last one by default.
-        device->ib_dev = device->dev_list[num_devices - 1];
+        // Use the first one by default.
+        device->ib_dev = device->dev_list[0];
         if (!device->ib_dev) {
             fprintf(stderr, "No IB devices found\n");
             exit(EXIT_FAILURE);
